@@ -530,27 +530,39 @@ export default function OrdersPage() {
   const effectiveItemsTotal = Math.max(0, rawItemsTotal - numDiscount);
 
   const calculatedFinancials = useMemo(() => {
-    let taxableSubtotal = effectiveItemsTotal;
     let cgst = 0;
     let sgst = 0;
     let grandTotal = effectiveItemsTotal;
+    let displaySubtotal = rawItemsTotal;
+    let displayDiscount = numDiscount;
+    let taxableSubtotal = effectiveItemsTotal;
 
     if (gstConfig.enabled && gstConfig.percentage > 0) {
-      const halfRate = gstConfig.percentage / 2;
       if (gstConfig.pricingType === "inclusive") {
-        // Inclusive: price already contains tax, extract it
-        taxableSubtotal = Number(
-          (effectiveItemsTotal / (1 + gstConfig.percentage / 100)).toFixed(2)
-        );
-        const totalTax = Number((effectiveItemsTotal - taxableSubtotal).toFixed(2));
-        cgst = Number((totalTax / 2).toFixed(2));
-        sgst = Number((totalTax / 2).toFixed(2));
+        // INCLUSIVE GST: Prices ALREADY include GST -> Breakdown is required!
         grandTotal = effectiveItemsTotal;
+
+        const baseSubtotal = Number((rawItemsTotal / (1 + gstConfig.percentage / 100)).toFixed(2));
+        const baseDiscount = numDiscount > 0 ? Number((numDiscount / (1 + gstConfig.percentage / 100)).toFixed(2)) : 0;
+        taxableSubtotal = Number((baseSubtotal - baseDiscount).toFixed(2));
+
+        const totalTax = Number((grandTotal - taxableSubtotal).toFixed(2));
+        const halfTax = Number((totalTax / 2).toFixed(2));
+        cgst = halfTax;
+        sgst = Number((totalTax - halfTax).toFixed(2));
+
+        displaySubtotal = baseSubtotal;
+        displayDiscount = baseDiscount;
       } else {
-        // Exclusive: add tax on top of discounted subtotal
+        // EXCLUSIVE GST: Prices DO NOT include GST -> Breakdown is NOT required (added on top)!
+        taxableSubtotal = effectiveItemsTotal;
+        const halfRate = gstConfig.percentage / 2;
         cgst = Number(((taxableSubtotal * halfRate) / 100).toFixed(2));
         sgst = Number(((taxableSubtotal * halfRate) / 100).toFixed(2));
         grandTotal = Number((taxableSubtotal + cgst + sgst).toFixed(2));
+
+        displaySubtotal = rawItemsTotal;
+        displayDiscount = numDiscount;
       }
     }
 
@@ -570,7 +582,9 @@ export default function OrdersPage() {
 
     return {
       rawItemsTotal,
+      displaySubtotal,
       numDiscount,
+      displayDiscount,
       taxableSubtotal,
       cgst,
       sgst,
@@ -1007,8 +1021,8 @@ export default function OrdersPage() {
         deliveryTime: deliveryTime || "11:00 AM",
         packingDescription: (packingDescription || "").trim(),
         items: sanitizedItems,
-        subtotal: calculatedFinancials.rawItemsTotal || 0,
-        discount: calculatedFinancials.numDiscount || 0,
+        subtotal: calculatedFinancials.displaySubtotal || 0,
+        discount: calculatedFinancials.displayDiscount || 0,
         taxableSubtotal: calculatedFinancials.taxableSubtotal || 0,
         isGstEnabled: !!gstConfig.enabled,
         gstPercentage: gstConfig.percentage || 0,
@@ -2092,10 +2106,12 @@ export default function OrdersPage() {
               >
                 {/* Discount & Subtotal summary */}
                 <div className="space-y-1.5 text-xs">
-                  {/* Items Total */}
+                  {/* Subtotal */}
                   <div className="flex items-center justify-between text-slate-600">
-                    <span>Items Subtotal:</span>
-                    <span className="font-mono">₹{calculatedFinancials.rawItemsTotal.toFixed(2)}</span>
+                    <span>Subtotal:</span>
+                    <span className="font-mono font-medium text-slate-800">
+                      ₹{calculatedFinancials.displaySubtotal.toFixed(2)}
+                    </span>
                   </div>
 
                   {/* Discount input */}
@@ -2121,22 +2137,25 @@ export default function OrdersPage() {
                     </div>
                   </div>
 
+                  {calculatedFinancials.numDiscount > 0 && (
+                    <div className="flex items-center justify-between text-emerald-600 text-[11px]">
+                      <span>Discount Applied:</span>
+                      <span className="font-mono font-medium">
+                        -₹{calculatedFinancials.displayDiscount.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+
                   {/* GST Breakdown (if enabled) */}
-                  {gstConfig.enabled && (
-                    <div className="p-2 rounded-md bg-white border border-slate-200 space-y-1 text-[11px] font-mono">
-                      <div className="flex justify-between text-slate-500">
-                        <span>
-                          Taxable Net ({gstConfig.pricingType === "inclusive" ? "Extracted" : "Base"}):
-                        </span>
-                        <span>₹{calculatedFinancials.taxableSubtotal.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-[#348bdd]">
+                  {gstConfig.enabled && (calculatedFinancials.cgst > 0 || calculatedFinancials.sgst > 0) && (
+                    <div className="space-y-1 pt-1 border-t border-slate-200 text-slate-600 font-mono text-[11px]">
+                      <div className="flex justify-between">
                         <span>CGST ({gstConfig.percentage / 2}%):</span>
-                        <span>+₹{calculatedFinancials.cgst.toFixed(2)}</span>
+                        <span className="font-medium text-slate-800">₹{calculatedFinancials.cgst.toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between text-[#348bdd]">
+                      <div className="flex justify-between">
                         <span>SGST ({gstConfig.percentage / 2}%):</span>
-                        <span>+₹{calculatedFinancials.sgst.toFixed(2)}</span>
+                        <span className="font-medium text-slate-800">₹{calculatedFinancials.sgst.toFixed(2)}</span>
                       </div>
                     </div>
                   )}
@@ -3022,8 +3041,8 @@ export default function OrdersPage() {
                   className="p-4 rounded-lg border bg-slate-50/60 space-y-2 text-xs font-mono"
                   style={{ borderColor: "var(--color-border-subtle)" }}
                 >
-                  <div className="flex justify-between text-slate-500">
-                    <span>Items Subtotal:</span>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Subtotal:</span>
                     <span>₹{viewingOrder.subtotal.toFixed(2)}</span>
                   </div>
 
@@ -3033,11 +3052,6 @@ export default function OrdersPage() {
                       <span>-₹{viewingOrder.discount.toFixed(2)}</span>
                     </div>
                   )}
-
-                  <div className="flex justify-between text-slate-500">
-                    <span>Taxable Subtotal:</span>
-                    <span>₹{viewingOrder.taxableSubtotal.toFixed(2)}</span>
-                  </div>
 
                   {viewingOrder.isGstEnabled && viewingOrder.gstPercentage > 0 && (
                     <div className="space-y-1 pt-1 border-t border-slate-200/70 text-slate-600">

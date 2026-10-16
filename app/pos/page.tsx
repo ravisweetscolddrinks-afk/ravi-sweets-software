@@ -13,6 +13,7 @@ import {
   getDoc,
   updateDoc,
   serverTimestamp,
+  Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
@@ -308,33 +309,55 @@ export default function PosBillingPage() {
   const effectiveSubtotal = Math.max(0, rawSubtotal - discountNum);
 
   const financials = useMemo(() => {
-    let taxable = effectiveSubtotal;
     let cgst = 0;
     let sgst = 0;
     let grandTotal = effectiveSubtotal;
+    let displaySubtotal = rawSubtotal;
+    let displayDiscount = discountNum;
+    let taxableSubtotal = effectiveSubtotal;
 
     if (gstConfig.enabled && gstConfig.percentage > 0) {
-      const halfRate = gstConfig.percentage / 2;
       if (gstConfig.pricingType === "inclusive") {
-        taxable = Number((effectiveSubtotal / (1 + gstConfig.percentage / 100)).toFixed(2));
-        const totalTax = Number((effectiveSubtotal - taxable).toFixed(2));
-        cgst = Number((totalTax / 2).toFixed(2));
-        sgst = Number((totalTax / 2).toFixed(2));
+        // INCLUSIVE GST: Prices ALREADY include GST -> Breakdown is required!
+        // Grand Total remains the net payable amount (not added additionally)
         grandTotal = effectiveSubtotal;
+
+        // Break down subtotal and discount without GST:
+        const baseSubtotal = Number((rawSubtotal / (1 + gstConfig.percentage / 100)).toFixed(2));
+        const baseDiscount = discountNum > 0 ? Number((discountNum / (1 + gstConfig.percentage / 100)).toFixed(2)) : 0;
+        taxableSubtotal = Number((baseSubtotal - baseDiscount).toFixed(2));
+
+        // Tax component broken down from inclusive price:
+        const totalTax = Number((grandTotal - taxableSubtotal).toFixed(2));
+        const halfTax = Number((totalTax / 2).toFixed(2));
+        cgst = halfTax;
+        sgst = Number((totalTax - halfTax).toFixed(2));
+
+        displaySubtotal = baseSubtotal;
+        displayDiscount = baseDiscount;
       } else {
-        cgst = Number(((taxable * halfRate) / 100).toFixed(2));
-        sgst = Number(((taxable * halfRate) / 100).toFixed(2));
-        grandTotal = Number((taxable + cgst + sgst).toFixed(2));
+        // EXCLUSIVE GST: Prices DO NOT include GST -> Breakdown is NOT required (added on top)!
+        taxableSubtotal = effectiveSubtotal;
+        const halfRate = gstConfig.percentage / 2;
+        cgst = Number(((taxableSubtotal * halfRate) / 100).toFixed(2));
+        sgst = Number(((taxableSubtotal * halfRate) / 100).toFixed(2));
+        grandTotal = Number((taxableSubtotal + cgst + sgst).toFixed(2));
+
+        displaySubtotal = rawSubtotal;
+        displayDiscount = discountNum;
       }
     }
 
     return {
       rawSubtotal,
+      displaySubtotal,
       discount: discountNum,
-      taxableSubtotal: taxable,
+      displayDiscount,
+      taxableSubtotal,
       cgst,
       sgst,
-      grandTotal: Math.round(grandTotal), // Round off rupee for counter convenience
+      grandTotal: Math.round(grandTotal),
+      exactGrandTotal: grandTotal,
     };
   }, [rawSubtotal, effectiveSubtotal, discountNum, gstConfig]);
 
@@ -512,6 +535,29 @@ export default function PosBillingPage() {
     return `${yy}${mm}${dd}${hh}${min}${ss}`;
   };
 
+  // Safeguard against any undefined fields in Firestore writes
+  const sanitizeForFirestore = (obj: any): any => {
+    if (obj === undefined) return null;
+    if (obj === null) return null;
+    if (Array.isArray(obj)) return obj.map(sanitizeForFirestore);
+    if (typeof obj === "object") {
+      if (
+        obj instanceof Timestamp ||
+        obj instanceof Date ||
+        obj?._methodName ||
+        obj?.constructor?.name === "FieldValue"
+      ) {
+        return obj;
+      }
+      const clean: Record<string, any> = {};
+      for (const [key, val] of Object.entries(obj)) {
+        clean[key] = val === undefined ? null : sanitizeForFirestore(val);
+      }
+      return clean;
+    }
+    return obj;
+  };
+
   // --- 3. Draft The Bill ---
   const handleDraftBill = async () => {
     if (cart.length === 0) {
@@ -531,17 +577,27 @@ export default function PosBillingPage() {
         items: cart,
         discount: financials.discount,
         paymentMethod: paymentMode,
+        splitDetails:
+          paymentMode === "Split"
+            ? {
+                cash: Number(splitAmounts.cash) || 0,
+                upi: Number(splitAmounts.upi) || 0,
+                card: Number(splitAmounts.card) || 0,
+              }
+            : null,
         totalAmount: financials.grandTotal,
         createdAt: serverTimestamp(),
       };
 
+      const cleanDraftData = sanitizeForFirestore(draftData);
+
       if (activeDraftId) {
         // Update existing draft
-        await setDoc(doc(db, "drafted_bills", activeDraftId), draftData, { merge: true });
+        await setDoc(doc(db, "drafted_bills", activeDraftId), cleanDraftData, { merge: true });
         showToast(`Drafted bill #${billNumber} updated!`, "success");
       } else {
         // Create new draft
-        await addDoc(collection(db, "drafted_bills"), draftData);
+        await addDoc(collection(db, "drafted_bills"), cleanDraftData);
         showToast(`Bill #${billNumber} saved to Drafts!`, "success");
       }
 
@@ -619,8 +675,8 @@ export default function PosBillingPage() {
           imageUrl: i.imageUrl || "",
           status: "Delivered",
         })),
-        subtotal: financials.rawSubtotal,
-        discount: financials.discount,
+        subtotal: financials.displaySubtotal,
+        discount: financials.displayDiscount,
         taxableSubtotal: financials.taxableSubtotal,
         cgst: financials.cgst,
         sgst: financials.sgst,
@@ -628,8 +684,26 @@ export default function PosBillingPage() {
         gstPercentage: gstConfig.percentage,
         gstType: gstConfig.pricingType,
         grandTotal: financials.grandTotal,
+        receivedAmount: financials.grandTotal,
+        balanceAmount: 0,
         paymentMethod: paymentMode,
-        splitDetails: paymentMode === "Split" ? splitAmounts : undefined,
+        splitDetails:
+          paymentMode === "Split"
+            ? {
+                cash: Number(splitAmounts.cash) || 0,
+                upi: Number(splitAmounts.upi) || 0,
+                card: Number(splitAmounts.card) || 0,
+              }
+            : null,
+        paymentHistory: [
+          {
+            id: `inst_${Date.now()}`,
+            amount: financials.grandTotal,
+            paymentMethod: paymentMode,
+            date: new Date().toISOString(),
+            note: "POS Counter Full Payment",
+          },
+        ],
         paymentStatus: "Done",
         orderStatus: "Delivered",
         deliveryDate: dateStr,
@@ -638,11 +712,13 @@ export default function PosBillingPage() {
         createdAt: serverTimestamp(),
       };
 
+      const cleanSaleRecord = sanitizeForFirestore(saleRecord);
+
       // 1. Save to walk_in_sales collection
-      await addDoc(collection(db, "walk_in_sales"), saleRecord);
+      await addDoc(collection(db, "walk_in_sales"), cleanSaleRecord);
 
       // 2. Also save to orders collection with "Delivered" status so unified reports remain consistent
-      await addDoc(collection(db, "orders"), saleRecord);
+      await addDoc(collection(db, "orders"), cleanSaleRecord);
 
       // 3. Deduct stock from store_inventory for each item sold in this store
       for (const item of cart) {
@@ -700,14 +776,21 @@ export default function PosBillingPage() {
           rate: i.rate,
           totalAmount: i.totalAmount,
         })),
-        subtotal: financials.rawSubtotal,
-        discount: financials.discount,
+        subtotal: financials.displaySubtotal,
+        discount: financials.displayDiscount,
         taxableSubtotal: financials.taxableSubtotal,
         cgst: financials.cgst,
         sgst: financials.sgst,
         grandTotal: financials.grandTotal,
         paymentMethod: paymentMode,
-        splitDetails: paymentMode === "Split" ? splitAmounts : undefined,
+        splitDetails:
+          paymentMode === "Split"
+            ? {
+                cash: Number(splitAmounts.cash) || 0,
+                upi: Number(splitAmounts.upi) || 0,
+                card: Number(splitAmounts.card) || 0,
+              }
+            : undefined,
       });
 
       // Reset cart
@@ -1075,42 +1158,48 @@ export default function PosBillingPage() {
 
           {/* Cart Financial Summary & Payment */}
           <div className="p-4 border-t border-slate-200 bg-slate-50/80 space-y-3 shrink-0">
-            {/* Discount & Subtotal Rows */}
+            {/* Summary Breakdown: Subtotal -> Discount (if any) -> CGST -> SGST -> Grand Total */}
             <div className="space-y-1.5 text-xs">
               <div className="flex items-center justify-between text-slate-600">
-                <span>Items Subtotal:</span>
-                <span className="font-mono font-semibold text-slate-800">
-                  ₹{financials.rawSubtotal.toFixed(2)}
+                <span>Subtotal:</span>
+                <span className="font-mono font-medium text-slate-800">
+                  ₹{financials.displaySubtotal.toFixed(2)}
                 </span>
               </div>
 
               {/* Discount Input */}
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-600">Special Discount (₹):</span>
+                <span className="text-slate-600">Discount (₹):</span>
                 <input
                   type="number"
                   min="0"
                   placeholder="0.00"
                   value={discountAmount}
+                  onWheel={(e) => (e.target as HTMLElement).blur()}
                   onChange={(e) => setDiscountAmount(e.target.value)}
                   className="w-24 px-2 py-0.5 text-right border border-slate-200 rounded text-xs font-mono bg-white focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
                 />
               </div>
 
-              {/* GST Breakdown */}
+              {financials.discount > 0 && (
+                <div className="flex items-center justify-between text-emerald-600 text-[11px]">
+                  <span>Discount Applied:</span>
+                  <span className="font-mono font-medium">
+                    -₹{financials.displayDiscount.toFixed(2)}
+                  </span>
+                </div>
+              )}
+
+              {/* GST Breakdown (if enabled) */}
               {gstConfig.enabled && (financials.cgst > 0 || financials.sgst > 0) && (
-                <div className="pt-1 border-t border-slate-200/60 text-[11px] font-mono text-slate-500 space-y-0.5">
-                  <div className="flex justify-between">
-                    <span>Taxable Value:</span>
-                    <span>₹{financials.taxableSubtotal.toFixed(2)}</span>
-                  </div>
+                <div className="pt-1.5 border-t border-slate-200/60 text-[11px] font-mono text-slate-600 space-y-1">
                   <div className="flex justify-between">
                     <span>CGST ({gstConfig.percentage / 2}%):</span>
-                    <span>₹{financials.cgst.toFixed(2)}</span>
+                    <span className="font-medium text-slate-800">₹{financials.cgst.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>SGST ({gstConfig.percentage / 2}%):</span>
-                    <span>₹{financials.sgst.toFixed(2)}</span>
+                    <span className="font-medium text-slate-800">₹{financials.sgst.toFixed(2)}</span>
                   </div>
                 </div>
               )}
