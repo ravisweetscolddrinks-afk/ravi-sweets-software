@@ -115,11 +115,15 @@ export default function TopNavbar({ onToggleMobileMenu, isMobileMenuOpen }: TopN
           </span>
         </div> */}
 
-        {/* Connect Action Button (Thermal Printer Connection) */}
+        {/* Thermal Printer Connect Button (WebUSB & Web Bluetooth) */}
         <button
           onClick={() => setIsConnectModalOpen(true)}
-          title="Connect Thermal Printer (WebUSB, Bluetooth, ESC/POS)"
-          className={`ml-1 hidden md:flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-full text-white transition-all hover:opacity-90 shrink-0 font-normal cursor-pointer shadow-2xs ${
+          title={
+            settings.isConnected
+              ? `Connected: ${settings.deviceName || "Thermal Printer"} (${settings.paperSize === "3inch" ? "80mm" : "58mm"}) - Click to configure`
+              : "Connect Thermal Printer (WebUSB, Bluetooth)"
+          }
+          className={`ml-1 flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-full text-white transition-all hover:opacity-90 shrink-0 font-normal cursor-pointer shadow-2xs ${
             settings.isConnected ? "bg-emerald-600 hover:bg-emerald-700" : ""
           }`}
           style={
@@ -134,8 +138,10 @@ export default function TopNavbar({ onToggleMobileMenu, isMobileMenuOpen }: TopN
             }`}
           />
           <Printer size={12} />
-          <span>
-            {settings.isConnected ? `Printer (${settings.paperSize === "3inch" ? "80mm" : "58mm"})` : "Connect"}
+          <span className="truncate max-w-[170px]">
+            {settings.isConnected
+              ? `Connected: ${settings.deviceName || "Thermal Printer"}`
+              : "Connect"}
           </span>
         </button>
       </div>

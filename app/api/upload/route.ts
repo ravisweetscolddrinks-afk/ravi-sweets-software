@@ -4,9 +4,12 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
+    const base64Data = formData.get("base64") as string | null;
+    const customFileName = formData.get("fileName") as string | null;
+    const folder = (formData.get("folder") as string | null) || "/products";
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!file && !base64Data) {
+      return NextResponse.json({ error: "No file or base64 data provided" }, { status: 400 });
     }
 
     const privateKey =
@@ -14,13 +17,27 @@ export async function POST(req: NextRequest) {
       process.env.VITE_IMAGEKIT_PRIVATE_KEY ||
       "private_J3GwH4xbQz8ZEnUvPAdmZUtYZ90=";
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const base64File = buffer.toString("base64");
+    let base64File = "";
+    let finalFileName = customFileName || `upload-${Date.now()}.jpg`;
+
+    if (file) {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      base64File = buffer.toString("base64");
+      if (!customFileName) {
+        finalFileName = file.name || `upload-${Date.now()}.jpg`;
+      }
+    } else if (base64Data) {
+      // Strip base64 prefix if provided (e.g. data:image/png;base64,...)
+      base64File = base64Data.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "");
+      if (!customFileName) {
+        finalFileName = `qr-${Date.now()}.png`;
+      }
+    }
 
     const imageKitFormData = new FormData();
     imageKitFormData.append("file", base64File);
-    imageKitFormData.append("fileName", file.name || `product-${Date.now()}.jpg`);
-    imageKitFormData.append("folder", "/products");
+    imageKitFormData.append("fileName", finalFileName);
+    imageKitFormData.append("folder", folder);
 
     const authHeader = "Basic " + Buffer.from(privateKey + ":").toString("base64");
 

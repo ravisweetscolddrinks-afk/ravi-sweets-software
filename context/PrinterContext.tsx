@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { useToast } from "@/components/ToastProvider";
 
-export type PrinterConnectionType = "browser" | "usb" | "bluetooth";
+export type PrinterConnectionType = "usb" | "bluetooth";
 export type PaperSize = "3inch" | "2inch"; // 3inch = 80mm, 2inch = 58mm
 
 export interface PrinterSettings {
@@ -56,10 +56,10 @@ interface PrinterContextType {
 }
 
 const defaultSettings: PrinterSettings = {
-  connectionType: "browser",
+  connectionType: "usb",
   paperSize: "3inch",
   autoCut: true,
-  deviceName: "System Thermal Printer",
+  deviceName: "",
   isConnected: false,
 };
 
@@ -232,14 +232,18 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
       const saved = localStorage.getItem("ravi_sweets_printer_config");
       if (saved) {
         const parsed = JSON.parse(saved);
+        const connectionType: PrinterConnectionType =
+          parsed.connectionType === "bluetooth" ? "bluetooth" : "usb";
         setSettings((prev) => ({
           ...prev,
           ...parsed,
+          connectionType,
           isConnected: parsed.isConnected ?? false,
+          deviceName: parsed.isConnected ? parsed.deviceName || "Thermal Printer" : "",
         }));
 
         // If saved as USB, check for authorized device
-        if (parsed.connectionType === "usb" && typeof window !== "undefined" && "usb" in navigator) {
+        if (connectionType === "usb" && typeof window !== "undefined" && "usb" in navigator) {
           (navigator as any).usb.getDevices().then(async (devices: any[]) => {
             if (devices.length > 0 && !usbDeviceRef.current) {
               try {
@@ -297,7 +301,7 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
     return `${start}${"*".repeat(maskedLen)}${end}`;
   }, []);
 
-  // Connect printer handler
+  // Connect printer handler (Only WebUSB and Web Bluetooth)
   const connectPrinter = useCallback(
     async (
       type: PrinterConnectionType,
@@ -307,9 +311,8 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
       try {
         if (type === "usb") {
           if (!("usb" in navigator)) {
-            showToast("WebUSB not supported in this browser. Switched to system thermal driver.", "info");
-            updateSettings({ connectionType: "browser", paperSize: size, autoCut, isConnected: true, deviceName: "System Thermal Driver" });
-            return true;
+            showToast("WebUSB is not supported in this browser. Please use Chrome or Edge.", "error");
+            return false;
           }
 
           // Request USB thermal printer device
@@ -328,9 +331,8 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
           return true;
         } else if (type === "bluetooth") {
           if (!("bluetooth" in navigator)) {
-            showToast("Web Bluetooth not supported in this browser. Switched to system thermal driver.", "info");
-            updateSettings({ connectionType: "browser", paperSize: size, autoCut, isConnected: true, deviceName: "System Thermal Driver" });
-            return true;
+            showToast("Web Bluetooth is not supported in this browser. Please use Chrome or Edge.", "error");
+            return false;
           }
 
           // Request Bluetooth device with printer service
@@ -372,18 +374,9 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
           });
           showToast(`Direct Bluetooth connected to ${devName}!`, "success");
           return true;
-        } else {
-          // Standard browser / OS print
-          updateSettings({
-            connectionType: "browser",
-            paperSize: size,
-            autoCut,
-            deviceName: "System Thermal Driver",
-            isConnected: true,
-          });
-          showToast(`Thermal printer set to ${size === "3inch" ? "80mm / 3\"" : "58mm / 2\""}!`, "success");
-          return true;
         }
+
+        return false;
       } catch (err: any) {
         if (err.name !== "NotFoundError") {
           console.error("Printer connection error:", err);
@@ -403,13 +396,19 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
     }
     usbDeviceRef.current = null;
     bluetoothCharRef.current = null;
-    updateSettings({ isConnected: false, deviceName: "Disconnected" });
+    updateSettings({ isConnected: false, deviceName: "" });
     showToast("Thermal printer disconnected", "info");
   }, [updateSettings, showToast]);
 
-  // Execute print job
+  // Execute print job (Strictly Direct WebUSB or Web Bluetooth)
   const printReceipt = useCallback(
     async (data: ReceiptData): Promise<boolean> => {
+      if (!settings.isConnected) {
+        showToast("No thermal printer connected. Please click Connect to pair your printer.", "error");
+        setIsConnectModalOpen(true);
+        return false;
+      }
+
       const maskedPhone = maskPhoneNumber(data.customerPhone);
 
       // 1. Direct WebUSB Transmission
@@ -425,23 +424,38 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
           } catch (e) {}
         }
 
-        if (device) {
-          try {
-            const { outEp } = await setupUsbDevice(device);
-            const rawBuffer = buildEscPosBuffer(data, settings.paperSize, settings.autoCut, maskedPhone);
-            const result = await device.transferOut(outEp, rawBuffer);
-            if (result.status === "ok") {
-              showToast("Sent directly to USB thermal printer!", "success");
-              return true;
-            }
-          } catch (usbErr: any) {
-            console.warn("Direct USB transfer failed, falling back to system print:", usbErr);
+        if (!device) {
+          showToast("USB printer not detected. Please reconnect your printer.", "error");
+          setIsConnectModalOpen(true);
+          return false;
+        }
+
+        try {
+          const { outEp } = await setupUsbDevice(device);
+          const rawBuffer = buildEscPosBuffer(data, settings.paperSize, settings.autoCut, maskedPhone);
+          const result = await device.transferOut(outEp, rawBuffer);
+          if (result.status === "ok") {
+            showToast("Printed successfully via USB!", "success");
+            return true;
+          } else {
+            showToast("USB transfer status: " + result.status, "error");
+            return false;
           }
+        } catch (usbErr: any) {
+          console.error("Direct USB transfer failed:", usbErr);
+          showToast("USB print error: " + (usbErr.message || "Failed to communicate with printer"), "error");
+          return false;
         }
       }
 
       // 2. Direct Web Bluetooth Transmission
-      if (settings.connectionType === "bluetooth" && bluetoothCharRef.current) {
+      if (settings.connectionType === "bluetooth") {
+        if (!bluetoothCharRef.current) {
+          showToast("Bluetooth printer not connected. Please reconnect your printer.", "error");
+          setIsConnectModalOpen(true);
+          return false;
+        }
+
         try {
           const char = bluetoothCharRef.current;
           const rawBuffer = buildEscPosBuffer(data, settings.paperSize, settings.autoCut, maskedPhone);
@@ -450,29 +464,18 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
             const chunk = rawBuffer.slice(i, i + CHUNK);
             await char.writeValue(chunk);
           }
-          showToast("Sent directly to Bluetooth thermal printer!", "success");
+          showToast("Printed successfully via Bluetooth!", "success");
           return true;
         } catch (btErr: any) {
-          console.warn("Direct Bluetooth write failed, falling back to system print:", btErr);
+          console.error("Direct Bluetooth write failed:", btErr);
+          showToast("Bluetooth print error: " + (btErr.message || "Failed to communicate with printer"), "error");
+          return false;
         }
       }
 
-      // 3. Infallible In-Page Slip Print Engine (Works with all Windows USB Thermal Drivers, POS-80, POS-58, etc.)
-      try {
-        setActiveReceipt(data);
-        // Wait a frame for React to render the printable receipt into DOM
-        setTimeout(() => {
-          window.focus();
-          window.print();
-        }, 120);
-        return true;
-      } catch (err: any) {
-        console.error("Print receipt error:", err);
-        showToast("Error triggering print: " + err.message, "error");
-        return false;
-      }
+      return false;
     },
-    [settings, maskPhoneNumber, showToast]
+    [settings, maskPhoneNumber, showToast, setIsConnectModalOpen]
   );
 
   return (

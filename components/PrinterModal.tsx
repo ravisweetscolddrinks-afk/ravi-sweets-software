@@ -6,7 +6,6 @@ import {
   Printer,
   Usb,
   Bluetooth,
-  Monitor,
   Scissors,
   CheckCircle2,
   X,
@@ -27,7 +26,7 @@ export default function PrinterModal() {
   } = usePrinter();
 
   const [connectionType, setConnectionType] = useState<PrinterConnectionType>(
-    settings.connectionType || "browser"
+    settings.connectionType === "bluetooth" ? "bluetooth" : "usb"
   );
   const [paperSize, setPaperSize] = useState<PaperSize>(
     settings.paperSize || "3inch"
@@ -143,26 +142,26 @@ export default function PrinterModal() {
 
         {/* Form Body */}
         <div className="p-6 space-y-4 text-xs">
-          {/* 1. Connection Mode Selector */}
+          {/* 1. Connection Mode Selector (Only WebUSB and Web Bluetooth) */}
           <div>
             <label className="block text-[11px] font-mono font-medium text-slate-500 uppercase tracking-wide mb-2">
               Select Connection Interface
             </label>
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
               {/* WebUSB */}
               <button
                 type="button"
                 onClick={() => setConnectionType("usb")}
-                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                className={`p-3.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
                   connectionType === "usb"
                     ? "border-[#348bdd] bg-blue-50/50 text-[#348bdd] shadow-xs ring-1 ring-[#348bdd]"
                     : "border-slate-200 hover:border-slate-300 text-slate-600"
                 }`}
               >
-                <Usb size={18} />
+                <Usb size={20} />
                 <span className="font-semibold text-xs">WebUSB</span>
                 <span className="text-[10px] text-slate-400 text-center font-mono">
-                  USB Cable
+                  USB Cable Connection
                 </span>
               </button>
 
@@ -170,33 +169,16 @@ export default function PrinterModal() {
               <button
                 type="button"
                 onClick={() => setConnectionType("bluetooth")}
-                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                className={`p-3.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
                   connectionType === "bluetooth"
                     ? "border-[#348bdd] bg-blue-50/50 text-[#348bdd] shadow-xs ring-1 ring-[#348bdd]"
                     : "border-slate-200 hover:border-slate-300 text-slate-600"
                 }`}
               >
-                <Bluetooth size={18} />
-                <span className="font-semibold text-xs">Bluetooth</span>
+                <Bluetooth size={20} />
+                <span className="font-semibold text-xs">Web Bluetooth</span>
                 <span className="text-[10px] text-slate-400 text-center font-mono">
-                  Wireless
-                </span>
-              </button>
-
-              {/* System Browser Print */}
-              <button
-                type="button"
-                onClick={() => setConnectionType("browser")}
-                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                  connectionType === "browser"
-                    ? "border-[#348bdd] bg-blue-50/50 text-[#348bdd] shadow-xs ring-1 ring-[#348bdd]"
-                    : "border-slate-200 hover:border-slate-300 text-slate-600"
-                }`}
-              >
-                <Monitor size={18} />
-                <span className="font-semibold text-xs">System Print</span>
-                <span className="text-[10px] text-slate-400 text-center font-mono">
-                  Standard Dialog
+                  Wireless Bluetooth
                 </span>
               </button>
             </div>

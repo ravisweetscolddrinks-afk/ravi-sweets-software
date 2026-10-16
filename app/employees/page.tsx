@@ -264,10 +264,19 @@ export default function EmployeesPage() {
     setImagePreview(URL.createObjectURL(file));
   };
 
-  // Upload image to ImageKit via `/api/upload`
-  const uploadImageToImageKit = async (file: File): Promise<string> => {
+  // Upload file or base64 to ImageKit via `/api/upload`
+  const uploadToImageKit = async (options: {
+    file?: File;
+    base64?: string;
+    fileName?: string;
+    folder?: string;
+  }): Promise<string> => {
     const formData = new FormData();
-    formData.append("file", file);
+    if (options.file) formData.append("file", options.file);
+    if (options.base64) formData.append("base64", options.base64);
+    if (options.fileName) formData.append("fileName", options.fileName);
+    if (options.folder) formData.append("folder", options.folder);
+
     const res = await fetch("/api/upload", {
       method: "POST",
       body: formData,
@@ -344,13 +353,19 @@ export default function EmployeesPage() {
     setIsSubmitting(true);
     try {
       // 1. Upload profile image to ImageKit if a new file is chosen
-      let finalPicUrl = imagePreview;
+      let finalPicUrl = imagePreview || "";
       if (imageFile) {
         setIsUploadingImage(true);
         try {
-          finalPicUrl = await uploadImageToImageKit(imageFile);
+          showToast("Uploading profile photo to ImageKit...", "info");
+          finalPicUrl = await uploadToImageKit({
+            file: imageFile,
+            fileName: `emp-${Date.now()}-${imageFile.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`,
+            folder: "/employees/profiles",
+          });
         } catch (imgErr: any) {
-          showToast("Image upload warning: " + imgErr.message, "error");
+          console.error("Profile photo upload warning:", imgErr);
+          showToast("Photo upload warning: " + imgErr.message, "error");
         } finally {
           setIsUploadingImage(false);
         }
@@ -358,18 +373,22 @@ export default function EmployeesPage() {
 
       // 2. Determine or generate 8-digit Employee ID
       let finalEmpCode = "";
+      let existingEmp: EmployeeItem | undefined;
       if (editingEmployeeId) {
-        const existing = employees.find((e) => e.id === editingEmployeeId);
-        finalEmpCode = existing?.employeeId || generateUnique8DigitId();
+        existingEmp = employees.find((e) => e.id === editingEmployeeId);
+        finalEmpCode = existingEmp?.employeeId || generateUnique8DigitId();
       } else {
         finalEmpCode = generateUnique8DigitId();
       }
 
-      // 3. Generate QR code Data URL for the 8-digit Employee ID
+      // 3. Generate QR code & Upload to ImageKit
+      let finalQrCodeUrl = existingEmp?.qrCodeUrl || "";
+
+      // Generate the fresh QR code data URL for this employee ID
       let qrCodeDataUrl = "";
       try {
         qrCodeDataUrl = await QRCode.toDataURL(finalEmpCode, {
-          width: 320,
+          width: 360,
           margin: 1,
           color: {
             dark: "#0f172a",
@@ -378,6 +397,25 @@ export default function EmployeesPage() {
         });
       } catch (qrErr) {
         console.warn("QR code generation error:", qrErr);
+      }
+
+      // Upload QR code to ImageKit if new employee or if existing QR code is not yet on ImageKit
+      const alreadyOnImageKit = finalQrCodeUrl && finalQrCodeUrl.includes("imagekit.io");
+      if (qrCodeDataUrl && (!alreadyOnImageKit || !editingEmployeeId)) {
+        try {
+          showToast("Uploading QR code to ImageKit...", "info");
+          finalQrCodeUrl = await uploadToImageKit({
+            base64: qrCodeDataUrl,
+            fileName: `emp-qr-${finalEmpCode}.png`,
+            folder: "/employees/qrcodes",
+          });
+        } catch (qrUploadErr: any) {
+          console.error("QR Code ImageKit upload error:", qrUploadErr);
+          // Fallback to generated data URL if upload failed
+          if (!finalQrCodeUrl) {
+            finalQrCodeUrl = qrCodeDataUrl;
+          }
+        }
       }
 
       // 4. Coordinates
@@ -406,7 +444,7 @@ export default function EmployeesPage() {
           phone: formEmergencyPhone.trim(),
         },
         locationCoordinates: locationCoordinates,
-        qrCodeUrl: qrCodeDataUrl,
+        qrCodeUrl: finalQrCodeUrl || qrCodeDataUrl,
         status: formStatus,
         updatedAt: serverTimestamp(),
       };
@@ -819,7 +857,7 @@ export default function EmployeesPage() {
         title={editingEmployeeId ? "Edit Staff Member" : "Add New Employee"}
         subtitle="Manage employee profile, salary rate, leave quota, emergency contact & GPS location"
       >
-        <form onSubmit={handleSaveEmployee} className="p-6 space-y-4 overflow-y-auto max-h-[calc(100vh-130px)]">
+        <form onSubmit={handleSaveEmployee} className="space-y-4">
           {/* Profile Picture Upload Section */}
           <div className="p-4 rounded-xl border bg-slate-50/60 border-slate-200/80">
             <label className="block text-xs uppercase tracking-wider mb-2 font-medium text-slate-700">
@@ -1142,19 +1180,31 @@ export default function EmployeesPage() {
           </div>
 
           {/* Submit Actions */}
-          <div className="pt-4 border-t flex items-center justify-end gap-2 border-slate-200">
+          <div
+            className="pt-4 border-t flex items-center justify-end gap-2.5 sticky bottom-0 bg-white"
+            style={{ borderColor: "var(--color-border-subtle)" }}
+          >
             <button
               type="button"
+              disabled={isSubmitting || isUploadingImage}
               onClick={() => setIsDrawerOpen(false)}
-              className="px-4 py-2 text-xs rounded-lg border bg-white text-slate-700 hover:bg-slate-50 font-medium cursor-pointer border-slate-200"
+              className="px-4 py-2 text-xs rounded-md border hover:bg-slate-50 transition-colors cursor-pointer"
+              style={{
+                borderColor: "var(--color-border-base)",
+                color: "var(--color-text-secondary)",
+                fontWeight: 500,
+              }}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting || isUploadingImage}
-              className="px-5 py-2 text-xs rounded-lg text-white font-medium cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
-              style={{ backgroundColor: "var(--color-brand-primary)" }}
+              className="px-4 py-2 text-xs rounded-md text-white transition-opacity disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+              style={{
+                backgroundColor: "var(--color-brand-primary)",
+                fontWeight: 500,
+              }}
             >
               {(isSubmitting || isUploadingImage) && (
                 <Loader2 size={13} className="animate-spin" />
