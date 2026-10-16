@@ -1,26 +1,128 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Font Family & Weights */
+  --font-family-sora: var(--font-sora), 'Sora', sans-serif;
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+
+  /* Background Colors */
+  --color-bg-canvas: #fcfcfd;
+  --color-bg-surface: #ffffff;
+  --color-bg-sidebar: #ffffff;
+  --color-bg-topbar: #ffffff;
+  --color-bg-subtle: #f8fafc;
+  --color-bg-hover: #f1f5f9;
+  --color-bg-active: #f1f5f9;
+
+  /* Border Colors */
+  --color-border-base: #e2e8f0;
+  --color-border-subtle: #edf2f7;
+  --color-border-hover: #cbd5e1;
+  --color-border-focus: #348bdd;
+
+  /* Primary Brand Colors (#348bdd) */
+  --color-brand-primary: #348bdd;
+  --color-brand-primary-hover: #2475c8;
+  --color-brand-primary-light: #ebf4fc;
+  --color-brand-primary-border: #b8daf7;
+  --color-brand-primary-text: #1d5f9f;
+
+  /* Brand Aliases */
+  --color-brand-emerald: #348bdd;
+  --color-brand-emerald-hover: #2475c8;
+  --color-brand-emerald-light: #ebf4fc;
+  --color-brand-emerald-border: #b8daf7;
+  --color-brand-emerald-text: #1d5f9f;
+
+  /* Tag & Accent Colors */
+  --color-accent-amber-bg: #fffbeb;
+  --color-accent-amber-border: #fef3c7;
+  --color-accent-amber-text: #b45309;
+
+  --color-accent-blue-bg: #eff6ff;
+  --color-accent-blue-border: #dbeafe;
+  --color-accent-blue-text: #1d4ed8;
+
+  --color-accent-purple-bg: #faf5ff;
+  --color-accent-purple-border: #f3e8ff;
+  --color-accent-purple-text: #7e22ce;
+
+  /* Shadow Variables */
+  --shadow-subtle: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-dropdown: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Enforce Sora font family globally with maximum font-weight of 500 */
+* {
+  font-family: var(--font-family-sora) !important;
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+b, strong, h1, h2, h3, h4, h5, h6, th {
+  font-weight: 500 !important;
+}
+
+/* Ensure cursor pointer on all interactive elements */
+button,
+[role="button"],
+select,
+summary,
+input[type="checkbox"],
+input[type="radio"],
+input[type="submit"],
+input[type="button"],
+.cursor-pointer,
+a {
+  cursor: pointer !important;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-bg-canvas);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sora);
+  font-weight: var(--font-weight-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Technical dot matrix background */
+.supabase-dot-grid {
+  background-color: var(--color-bg-subtle);
+  background-image: radial-gradient(var(--color-border-base) 1.2px, transparent 1.2px);
+  background-size: 16px 16px;
+}
+
+/* Custom scrollbars matching the clean Supabase UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-base);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-hover);
+}
+
+/* Disable number input spinner up/down arrows across all browsers */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield !important;
 }
