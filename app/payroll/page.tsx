@@ -94,6 +94,23 @@ export default function PayrollPage() {
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth()); // 0-indexed (0=Jan, 9=Oct)
 
+  const initialMonthPadded = String(today.getMonth() + 1).padStart(2, "0");
+  const initialLastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const [startDate, setStartDate] = useState<string>(
+    `${today.getFullYear()}-${initialMonthPadded}-01`
+  );
+  const [endDate, setEndDate] = useState<string>(
+    `${today.getFullYear()}-${initialMonthPadded}-${String(initialLastDay).padStart(2, "0")}`
+  );
+
+  // Sync Start & End Date whenever selectedMonth or selectedYear changes
+  useEffect(() => {
+    const monthPadded = String(selectedMonth + 1).padStart(2, "0");
+    const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+    setStartDate(`${selectedYear}-${monthPadded}-01`);
+    setEndDate(`${selectedYear}-${monthPadded}-${String(lastDay).padStart(2, "0")}`);
+  }, [selectedYear, selectedMonth]);
+
   // Reference & Loaded Data
   const [employees, setEmployees] = useState<EmployeeItem[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
@@ -121,6 +138,16 @@ export default function PayrollPage() {
   const actualDaysInMonth = useMemo(() => {
     return new Date(selectedYear, selectedMonth + 1, 0).getDate();
   }, [selectedYear, selectedMonth]);
+
+  // Total calendar days in the selected period (month start date to end date)
+  const totalPeriodDays = useMemo(() => {
+    if (!startDate || !endDate) return actualDaysInMonth;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = end.getTime() - start.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, diffDays);
+  }, [startDate, endDate, actualDaysInMonth]);
 
   // 1. Subscribe to Employees
   useEffect(() => {
@@ -181,13 +208,11 @@ export default function PayrollPage() {
     fetchSettings();
   }, [actualDaysInMonth]);
 
-  // 3. Fetch Monthly Attendance Records for the Selected Month
+  // 3. Fetch Monthly Attendance Records for the Selected Month / Date Range
   const fetchMonthAttendance = useCallback(async () => {
     setIsLoading(true);
     try {
-      const monthPadded = String(selectedMonth + 1).padStart(2, "0");
-      const startDate = `${selectedYear}-${monthPadded}-01`;
-      const endDate = `${selectedYear}-${monthPadded}-${String(actualDaysInMonth).padStart(2, "0")}`;
+      if (!startDate || !endDate) return;
 
       const q = query(
         collection(db, "employee_attendance"),
@@ -212,33 +237,36 @@ export default function PayrollPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedYear, selectedMonth, actualDaysInMonth]);
+  }, [startDate, endDate]);
 
   useEffect(() => {
     fetchMonthAttendance();
   }, [fetchMonthAttendance]);
 
-  // 4. Live Payroll Computations for each Employee
+  // 4. Live Payroll Computations for each Employee (from month start date to end date)
   const payrollRows: EmployeePayrollRow[] = useMemo(() => {
-    const daysDivisor = Math.max(1, payrollSettings.daysCount || 30);
+    const daysDivisor = Math.max(1, payrollSettings.daysCount || totalPeriodDays || 30);
 
     return employees.map((emp) => {
-      // Filter attendance records for this employee in the selected month
+      // Filter attendance records for this employee in the selected date range
       const empLogs = attendanceRecords.filter((r) => r.employeeId === emp.id);
 
       let presentCount = 0;
-      let absentCount = 0;
+      let explicitAbsentCount = 0;
       let halfDayCount = 0;
 
       empLogs.forEach((log) => {
         if (log.status === "Present") presentCount++;
-        else if (log.status === "Absent") absentCount++;
+        else if (log.status === "Absent") explicitAbsentCount++;
         else if (log.status === "Half Day") halfDayCount++;
       });
 
       // Half day counts as 0.5 present and 0.5 absent
       const daysPresent = presentCount + halfDayCount * 0.5;
-      const daysAbsent = absentCount + halfDayCount * 0.5;
+
+      // In the period from month start date to end date:
+      // Absent days = days in period where employee was not present
+      const daysAbsent = Math.max(0, totalPeriodDays - daysPresent);
 
       // Per Day Amount
       let perDayAmount = 0;
@@ -248,31 +276,29 @@ export default function PayrollPage() {
         perDayAmount = emp.salaryAmount;
       }
 
-      // Loss of Pay (LOP) Calculation:
-      // "if no of absent are more then accepted leaves then loss of pay menad if absents are 4 but acepted leaves are 2 then loos of pay is 2 only"
+      // Loss of Pay (LOP) & Salary Calculation:
       const acceptedLeaves = emp.acceptedLeaves || 0;
       const lossOfPayDays = Math.max(0, daysAbsent - acceptedLeaves);
       const lossOfPayDeduction = Number((lossOfPayDays * perDayAmount).toFixed(2));
 
-      // Bonus Calculation:
-      // "if all days are prent then bounys count days wiull add to the salary."
-      // Eligible if bonus is enabled AND employee has zero absent days (meaning 100% attendance during recorded days)
+      // Bonus: 100% full attendance (0 absents and attended all days in period)
       const isEligibleForBonus =
         payrollSettings.isBonusEnabled &&
         daysAbsent === 0 &&
-        daysPresent > 0 &&
-        daysPresent >= Math.min(20, daysDivisor - 4); // ensure active worker
+        daysPresent >= totalPeriodDays;
 
       const bonusDays = isEligibleForBonus ? Number(payrollSettings.bonusDaysCount || 0) : 0;
       const bonusAmount = Number((bonusDays * perDayAmount).toFixed(2));
 
-      // Gross & Net Salary
       let grossSalary = 0;
       let netSalary = 0;
 
       if (emp.salaryType === "monthly") {
         grossSalary = emp.salaryAmount;
-        netSalary = Math.max(0, Number((grossSalary - lossOfPayDeduction + bonusAmount).toFixed(2)));
+        netSalary = Math.max(
+          0,
+          Number((grossSalary - lossOfPayDeduction + bonusAmount).toFixed(2))
+        );
       } else {
         grossSalary = Number((daysPresent * perDayAmount).toFixed(2));
         netSalary = Math.max(0, Number((grossSalary + bonusAmount).toFixed(2)));
@@ -293,7 +319,7 @@ export default function PayrollPage() {
         netSalary,
       };
     });
-  }, [employees, attendanceRecords, payrollSettings]);
+  }, [employees, attendanceRecords, payrollSettings, totalPeriodDays]);
 
   // Filtered rows for overview
   const filteredRows = useMemo(() => {
@@ -397,24 +423,25 @@ export default function PayrollPage() {
                 color: "var(--color-text-secondary)",
               }}
             >
-              {MONTH_NAMES[selectedMonth]} {selectedYear}
+              {startDate} → {endDate} ({totalPeriodDays}d)
             </span>
           </div>
           <p
             className="text-xs mt-1"
             style={{ color: "var(--color-text-muted)" }}
           >
-            Automated salary computation, loss of pay deductions, full-attendance bonus, and digital payslips.
+            Automated salary computation from month start date to end date, LOP deductions, full-attendance bonus, and digital payslips.
           </p>
         </div>
 
-        {/* Month Selector & Controls */}
-        <div className="flex items-center gap-2">
-          {/* Month Dropdown */}
+        {/* Month Selector & Date Range Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Quick Month Dropdown */}
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(Number(e.target.value))}
             className="text-xs px-3 py-1.5 rounded-md border bg-white focus:outline-none cursor-pointer font-medium text-slate-800 border-slate-200 shadow-2xs"
+            title="Select Month"
           >
             {MONTH_NAMES.map((m, idx) => (
               <option key={m} value={idx}>
@@ -423,11 +450,12 @@ export default function PayrollPage() {
             ))}
           </select>
 
-          {/* Year Dropdown */}
+          {/* Quick Year Dropdown */}
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(Number(e.target.value))}
             className="text-xs px-2.5 py-1.5 rounded-md border bg-white focus:outline-none cursor-pointer font-mono font-medium text-slate-800 border-slate-200 shadow-2xs"
+            title="Select Year"
           >
             {[2025, 2026, 2027, 2028].map((y) => (
               <option key={y} value={y}>
@@ -435,6 +463,30 @@ export default function PayrollPage() {
               </option>
             ))}
           </select>
+
+          {/* Explicit Start Date and End Date Range */}
+          <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-md shadow-2xs text-xs">
+            <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">From</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="text-xs font-mono font-medium text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+              title="Start Date"
+            />
+            <span className="text-slate-300">→</span>
+            <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">To</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="text-xs font-mono font-medium text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+              title="End Date"
+            />
+            <span className="text-[10px] font-mono px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded font-medium">
+              {totalPeriodDays}d
+            </span>
+          </div>
 
           {/* Refresh Attendance Data */}
           <button
