@@ -13,6 +13,7 @@ import {
   orderBy,
   serverTimestamp,
   Timestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
@@ -97,42 +98,50 @@ export default function StoresPage() {
   });
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
 
-  // Fetch count and stores from Firestore
+  // Manual refresh helper
   const fetchStoresData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const storesCol = collection(db, "stores");
-
-      // Count using getCountFromServer
-      try {
-        const countSnapshot = await getCountFromServer(storesCol);
-        setTotalCount(countSnapshot.data().count);
-      } catch (countErr) {
-        console.warn("Count query fallback:", countErr);
-      }
-
-      // Fetch records
-      const q = query(storesCol, orderBy("createdAt", "desc"));
+      const q = query(collection(db, "stores"), orderBy("createdAt", "desc"));
       const snapshot = await getDocs(q);
-
       const items: StoreItem[] = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
         ...(docSnap.data() as Omit<StoreItem, "id">),
       }));
-
       setStores(items);
-      setTotalCount((prev) => (prev > 0 ? prev : items.length));
-    } catch (err: any) {
-      console.error("Failed to fetch stores:", err);
-      showToast("Unable to load stores: " + (err.message || "Unknown error"), "error");
+      setTotalCount(items.length);
+    } catch (err) {
+      console.error("Refresh stores error:", err);
     } finally {
       setIsLoading(false);
     }
-  }, [showToast]);
+  }, []);
 
+  // Realtime Listeners for Stores
   useEffect(() => {
-    fetchStoresData();
-  }, [fetchStoresData]);
+    setIsLoading(true);
+    const storesCol = collection(db, "stores");
+    const q = query(storesCol, orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const items: StoreItem[] = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<StoreItem, "id">),
+        }));
+        setStores(items);
+        setTotalCount(items.length);
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error("Realtime stores error:", err);
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   // Search filtering
   const filteredStores = useMemo(() => {

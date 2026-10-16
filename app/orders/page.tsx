@@ -14,6 +14,7 @@ import {
   orderBy,
   serverTimestamp,
   Timestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
@@ -278,12 +279,53 @@ export default function OrdersPage() {
   const [deletingOrder, setDeletingOrder] = useState<OrderRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  // --- 1. Fetch Reference Data & GST on Mount ---
-  const fetchReferenceData = useCallback(async () => {
+  // Manual refresh helper
+  const fetchOrdersData = useCallback(async () => {
+    setIsLoading(true);
     try {
-      // Fetch GST config
-      try {
-        const gstSnap = await getDoc(doc(db, "settings", "gst_settings"));
+      const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
+      const snapshot = await getDocs(q);
+      const items: OrderRecord[] = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<OrderRecord, "id">),
+      }));
+      setOrders(items);
+      setTotalCount(items.length);
+    } catch (err) {
+      console.error("Refresh error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // --- 1. Realtime Listeners for Orders & Reference Data ---
+  useEffect(() => {
+    setIsLoading(true);
+
+    // Realtime Orders Listener
+    const ordersCol = collection(db, "orders");
+    const ordersQuery = query(ordersCol, orderBy("createdAt", "desc"));
+    const unsubOrders = onSnapshot(
+      ordersQuery,
+      (snapshot) => {
+        const items: OrderRecord[] = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<OrderRecord, "id">),
+        }));
+        setOrders(items);
+        setTotalCount(items.length);
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error("Realtime orders error:", err);
+        setIsLoading(false);
+      }
+    );
+
+    // Realtime GST Settings Listener
+    const unsubGst = onSnapshot(
+      doc(db, "settings", "gst_settings"),
+      (gstSnap) => {
         if (gstSnap.exists()) {
           const d = gstSnap.data();
           setGstConfig({
@@ -292,95 +334,73 @@ export default function OrdersPage() {
             pricingType: d.pricingType === "exclusive" ? "exclusive" : "inclusive",
           });
         }
-      } catch (gstErr) {
-        console.warn("Could not load GST settings:", gstErr);
-      }
+      },
+      (err) => console.warn("Realtime GST error:", err)
+    );
 
-      // Fetch Customers
-      const custSnap = await getDocs(
-        query(collection(db, "customers"), orderBy("name", "asc"))
-      );
-      setCustomersList(
-        custSnap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<CustomerOption, "id">),
-        }))
-      );
+    // Realtime Customers Listener
+    const unsubCustomers = onSnapshot(
+      query(collection(db, "customers"), orderBy("name", "asc")),
+      (custSnap) => {
+        setCustomersList(
+          custSnap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<CustomerOption, "id">),
+          }))
+        );
+      },
+      (err) => console.warn("Realtime customers error:", err)
+    );
 
-      // Fetch Stores
-      const storeSnap = await getDocs(
-        query(collection(db, "stores"), orderBy("name", "asc"))
-      );
-      setStoresList(
-        storeSnap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<StoreOption, "id">),
-        }))
-      );
+    // Realtime Stores Listener
+    const unsubStores = onSnapshot(
+      query(collection(db, "stores"), orderBy("name", "asc")),
+      (storeSnap) => {
+        setStoresList(
+          storeSnap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<StoreOption, "id">),
+          }))
+        );
+      },
+      (err) => console.warn("Realtime stores error:", err)
+    );
 
-      // Fetch Products
-      const prodSnap = await getDocs(
-        query(collection(db, "products"), orderBy("name", "asc"))
-      );
-      setProductsList(
-        prodSnap.docs.map((d) => ({
-          id: d.id,
-          name: d.data().name || "",
-          unit: d.data().unit || "piece",
-          amount: Number(d.data().amount) || 0,
-          imageUrl: d.data().imageUrl || "",
-          categoryName: d.data().categoryName || "",
-          barcode: d.data().barcode || "",
-          shortCode: d.data().shortCode || "",
-        }))
-      );
-    } catch (err) {
-      console.warn("Reference data error:", err);
-    }
-  }, []);
+    // Realtime Products Listener
+    const unsubProducts = onSnapshot(
+      query(collection(db, "products"), orderBy("name", "asc")),
+      (prodSnap) => {
+        setProductsList(
+          prodSnap.docs.map((d) => ({
+            id: d.id,
+            name: d.data().name || "",
+            unit: d.data().unit || "piece",
+            amount: Number(d.data().amount) || 0,
+            imageUrl: d.data().imageUrl || "",
+            categoryName: d.data().categoryName || "",
+            barcode: d.data().barcode || "",
+            shortCode: d.data().shortCode || "",
+          }))
+        );
+      },
+      (err) => console.warn("Realtime products error:", err)
+    );
 
-  // --- 2. Fetch Orders List ---
-  const fetchOrdersData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const ordersCol = collection(db, "orders");
-
-      // Count using getCountFromServer
-      try {
-        const countSnapshot = await getCountFromServer(ordersCol);
-        setTotalCount(countSnapshot.data().count);
-      } catch (countErr) {
-        console.warn("Count query fallback:", countErr);
-      }
-
-      // Query latest orders
-      const q = query(ordersCol, orderBy("createdAt", "desc"));
-      const snapshot = await getDocs(q);
-
-      const items: OrderRecord[] = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<OrderRecord, "id">),
-      }));
-
-      setOrders(items);
-      setTotalCount((prev) => (prev > 0 ? prev : items.length));
-    } catch (err: any) {
-      console.error("Failed to fetch orders:", err);
-      showToast("Unable to load orders: " + (err.message || "Unknown error"), "error");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [showToast]);
-
-  useEffect(() => {
-    fetchOrdersData();
-    fetchReferenceData();
     const today = new Date().toISOString().split("T")[0];
     setCurrentDateStr(today);
     setCustomStartDate(today);
     setCustomEndDate(today);
     setDeliveryDate(today);
-  }, [fetchOrdersData, fetchReferenceData]);
+
+    // Clean up all subscriptions on unmount
+    return () => {
+      unsubOrders();
+      unsubGst();
+      unsubCustomers();
+      unsubStores();
+      unsubProducts();
+    };
+  }, []);
 
   // --- 3. Date Filter Computations ---
   const isDateInRange = useCallback(

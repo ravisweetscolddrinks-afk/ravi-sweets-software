@@ -13,6 +13,7 @@ import {
   orderBy,
   serverTimestamp,
   Timestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
@@ -104,42 +105,50 @@ export default function CustomersPage() {
     });
   };
 
-  // Fetch count and customers from Firestore
+  // Manual refresh helper
   const fetchCustomersData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const custCol = collection(db, "customers");
-
-      // Count using getCountFromServer
-      try {
-        const countSnapshot = await getCountFromServer(custCol);
-        setTotalCount(countSnapshot.data().count);
-      } catch (countErr) {
-        console.warn("Count query fallback:", countErr);
-      }
-
-      // Fetch records (limit 24 is applied on page view, fetching latest records)
-      const q = query(custCol, orderBy("createdAt", "desc"));
+      const q = query(collection(db, "customers"), orderBy("createdAt", "desc"));
       const snapshot = await getDocs(q);
-
       const items: CustomerItem[] = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
         ...(docSnap.data() as Omit<CustomerItem, "id">),
       }));
-
       setCustomers(items);
-      setTotalCount((prev) => (prev > 0 ? prev : items.length));
-    } catch (err: any) {
-      console.error("Failed to fetch customers:", err);
-      showToast("Unable to load customers: " + (err.message || "Unknown error"), "error");
+      setTotalCount(items.length);
+    } catch (err) {
+      console.error("Refresh error:", err);
     } finally {
       setIsLoading(false);
     }
-  }, [showToast]);
+  }, []);
 
+  // Realtime Listeners for Customers
   useEffect(() => {
-    fetchCustomersData();
-  }, [fetchCustomersData]);
+    setIsLoading(true);
+    const custCol = collection(db, "customers");
+    const q = query(custCol, orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const items: CustomerItem[] = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<CustomerItem, "id">),
+        }));
+        setCustomers(items);
+        setTotalCount(items.length);
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error("Realtime customers error:", err);
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   // Search filtering
   const filteredCustomers = useMemo(() => {

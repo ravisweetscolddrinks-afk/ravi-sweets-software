@@ -13,6 +13,7 @@ import {
   orderBy,
   serverTimestamp,
   Timestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
@@ -110,42 +111,50 @@ export default function GenericUnitManager({
   });
   const [nameError, setNameError] = useState<string>("");
 
-  // Fetch count and records
+  // Manual refresh helper
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const colRef = collection(db, collectionName);
-
-      // Count using getCountFromServer
-      try {
-        const countSnapshot = await getCountFromServer(colRef);
-        setTotalCount(countSnapshot.data().count);
-      } catch (countErr) {
-        console.warn("Count query fallback:", countErr);
-      }
-
-      // Fetch items
-      const q = query(colRef, orderBy("createdAt", "desc"));
+      const q = query(collection(db, collectionName), orderBy("createdAt", "desc"));
       const snapshot = await getDocs(q);
-
       const records: UnitItem[] = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
         ...(docSnap.data() as Omit<UnitItem, "id">),
       }));
-
       setItems(records);
-      setTotalCount((prev) => (prev > 0 ? prev : records.length));
-    } catch (err: any) {
-      console.error(`Failed to fetch from ${collectionName}:`, err);
-      showToast(`Unable to load data: ${err.message || "Unknown error"}`, "error");
+      setTotalCount(records.length);
+    } catch (err) {
+      console.error(`Refresh error for ${collectionName}:`, err);
     } finally {
       setIsLoading(false);
     }
-  }, [collectionName, showToast]);
+  }, [collectionName]);
 
+  // Realtime Listeners for items
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    setIsLoading(true);
+    const colRef = collection(db, collectionName);
+    const q = query(colRef, orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const records: UnitItem[] = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<UnitItem, "id">),
+        }));
+        setItems(records);
+        setTotalCount(records.length);
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error(`Realtime error for ${collectionName}:`, err);
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [collectionName]);
 
   // Search filter
   const filteredItems = useMemo(() => {

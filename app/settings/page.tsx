@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
 import {
@@ -61,14 +61,15 @@ export default function SettingsPage() {
   });
   const [gstErrors, setGstErrors] = useState<{ [key: string]: string }>({});
 
-  // Load existing settings on mount
+  // Realtime listeners for settings
   useEffect(() => {
-    const loadSettings = async () => {
-      setIsLoading(true);
-      try {
-        // 1. Fetch Business Profile
-        const profileDocRef = doc(db, "settings", "business_profile");
-        const profileSnap = await getDoc(profileDocRef);
+    setIsLoading(true);
+
+    // 1. Business Profile Listener
+    const profileDocRef = doc(db, "settings", "business_profile");
+    const unsubProfile = onSnapshot(
+      profileDocRef,
+      (profileSnap) => {
         if (profileSnap.exists()) {
           const data = profileSnap.data();
           setProfileData({
@@ -83,10 +84,19 @@ export default function SettingsPage() {
             pincode: data.pincode || "",
           });
         }
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error("Profile realtime error:", err);
+        setIsLoading(false);
+      }
+    );
 
-        // 2. Fetch GST Settings
-        const gstDocRef = doc(db, "settings", "gst_settings");
-        const gstSnap = await getDoc(gstDocRef);
+    // 2. GST Settings Listener
+    const gstDocRef = doc(db, "settings", "gst_settings");
+    const unsubGst = onSnapshot(
+      gstDocRef,
+      (gstSnap) => {
         if (gstSnap.exists()) {
           const data = gstSnap.data();
           setGstData({
@@ -96,16 +106,15 @@ export default function SettingsPage() {
             pricingType: data.pricingType === "exclusive" ? "exclusive" : "inclusive",
           });
         }
-      } catch (err: any) {
-        console.error("Failed to load settings:", err);
-        showToast("Unable to load settings: " + (err.message || "Unknown error"), "error");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+      },
+      (err) => console.error("GST realtime error:", err)
+    );
 
-    loadSettings();
-  }, [showToast]);
+    return () => {
+      unsubProfile();
+      unsubGst();
+    };
+  }, []);
 
   // Validate Profile Form
   const validateProfile = () => {

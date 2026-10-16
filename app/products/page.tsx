@@ -13,6 +13,7 @@ import {
   orderBy,
   serverTimestamp,
   Timestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
@@ -123,75 +124,98 @@ export default function ProductsPage() {
   const [imagePreview, setImagePreview] = useState<string>("");
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
 
-  // Fetch dropdown options for Categories, Manufacturing Units & Packing Units
-  const fetchDropdownOptions = useCallback(async () => {
-    try {
-      const [catSnap, mfgSnap, packSnap] = await Promise.all([
-        getDocs(query(collection(db, "product_categories"), orderBy("name", "asc"))),
-        getDocs(query(collection(db, "manufacturing_units"), orderBy("name", "asc"))),
-        getDocs(query(collection(db, "packing_units"), orderBy("name", "asc"))),
-      ]);
-
-      setCategories(
-        catSnap.docs.map((d) => ({
-          id: d.id,
-          name: (d.data().name as string) || "Unnamed Category",
-        }))
-      );
-      setManufacturingUnits(
-        mfgSnap.docs.map((d) => ({
-          id: d.id,
-          name: (d.data().name as string) || "Unnamed Unit",
-        }))
-      );
-      setPackingUnits(
-        packSnap.docs.map((d) => ({
-          id: d.id,
-          name: (d.data().name as string) || "Unnamed Unit",
-        }))
-      );
-    } catch (err) {
-      console.warn("Could not fetch unit dropdowns:", err);
-    }
-  }, []);
-
-  // Fetch count and products from Firestore
+  // Manual refresh helper
   const fetchProductsData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const prodCol = collection(db, "products");
-
-      // Count using getCountFromServer
-      try {
-        const countSnapshot = await getCountFromServer(prodCol);
-        setTotalCount(countSnapshot.data().count);
-      } catch (countErr) {
-        console.warn("Count query fallback:", countErr);
-      }
-
-      // Fetch products
-      const q = query(prodCol, orderBy("createdAt", "desc"));
+      const q = query(collection(db, "products"), orderBy("createdAt", "desc"));
       const snapshot = await getDocs(q);
-
       const items: ProductItem[] = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
         ...(docSnap.data() as Omit<ProductItem, "id">),
       }));
-
       setProducts(items);
-      setTotalCount((prev) => (prev > 0 ? prev : items.length));
-    } catch (err: any) {
-      console.error("Failed to fetch products:", err);
-      showToast("Unable to load products: " + (err.message || "Unknown error"), "error");
+      setTotalCount(items.length);
+    } catch (err) {
+      console.error("Refresh products error:", err);
     } finally {
       setIsLoading(false);
     }
-  }, [showToast]);
+  }, []);
 
+  // Realtime Listeners for Products & Dropdown Units
   useEffect(() => {
-    fetchProductsData();
-    fetchDropdownOptions();
-  }, [fetchProductsData, fetchDropdownOptions]);
+    setIsLoading(true);
+
+    // Products Realtime Listener
+    const prodCol = collection(db, "products");
+    const q = query(prodCol, orderBy("createdAt", "desc"));
+    const unsubProducts = onSnapshot(
+      q,
+      (snapshot) => {
+        const items: ProductItem[] = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<ProductItem, "id">),
+        }));
+        setProducts(items);
+        setTotalCount(items.length);
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error("Realtime products error:", err);
+        setIsLoading(false);
+      }
+    );
+
+    // Categories Realtime Listener
+    const unsubCats = onSnapshot(
+      query(collection(db, "product_categories"), orderBy("name", "asc")),
+      (catSnap) => {
+        setCategories(
+          catSnap.docs.map((d) => ({
+            id: d.id,
+            name: (d.data().name as string) || "Unnamed Category",
+          }))
+        );
+      },
+      (err) => console.warn("Realtime categories error:", err)
+    );
+
+    // Manufacturing Units Realtime Listener
+    const unsubMfg = onSnapshot(
+      query(collection(db, "manufacturing_units"), orderBy("name", "asc")),
+      (mfgSnap) => {
+        setManufacturingUnits(
+          mfgSnap.docs.map((d) => ({
+            id: d.id,
+            name: (d.data().name as string) || "Unnamed Unit",
+          }))
+        );
+      },
+      (err) => console.warn("Realtime mfg units error:", err)
+    );
+
+    // Packing Units Realtime Listener
+    const unsubPack = onSnapshot(
+      query(collection(db, "packing_units"), orderBy("name", "asc")),
+      (packSnap) => {
+        setPackingUnits(
+          packSnap.docs.map((d) => ({
+            id: d.id,
+            name: (d.data().name as string) || "Unnamed Unit",
+          }))
+        );
+      },
+      (err) => console.warn("Realtime packing units error:", err)
+    );
+
+    return () => {
+      unsubProducts();
+      unsubCats();
+      unsubMfg();
+      unsubPack();
+    };
+  }, []);
 
   // Search filtering
   const filteredProducts = useMemo(() => {
