@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
+import { usePrinter } from "@/context/PrinterContext";
 import {
   Boxes,
   Layers,
@@ -105,6 +106,7 @@ type DateFilter = "all" | "today" | "tomorrow" | "this_week";
 
 export default function PackingPortalPage() {
   const { showToast } = useToast();
+  const { printReceipt } = usePrinter();
 
   // Data states
   const [orders, setOrders] = useState<OrderRecord[]>([]);
@@ -1336,8 +1338,32 @@ export default function PackingPortalPage() {
 
                         {/* Print packing slip */}
                         <button
-                          onClick={() => window.print()}
-                          className="p-1.5 text-slate-500 hover:text-slate-800 rounded border border-slate-200 bg-white hover:bg-slate-50 transition-colors shadow-2xs"
+                          onClick={() => {
+                            printReceipt({
+                              orderNumber: order.orderNumber,
+                              dateStr: order.deliveryDate || new Date().toISOString().split("T")[0],
+                              timeStr: order.deliveryTime || "",
+                              storeName: order.storeName,
+                              customerName: order.customerName,
+                              customerPhone: order.customerPhone,
+                              items: order.items.map((i) => ({
+                                name: i.name,
+                                quantity: i.quantity,
+                                unit: i.unit,
+                                rate: i.rate,
+                                totalAmount: i.totalAmount,
+                              })),
+                              subtotal: order.subtotal,
+                              discount: order.discount,
+                              taxableSubtotal: order.taxableSubtotal,
+                              cgst: order.cgst,
+                              sgst: order.sgst,
+                              grandTotal: order.grandTotal,
+                              paymentMethod: order.paymentMethod,
+                              splitDetails: order.splitDetails,
+                            });
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-slate-800 rounded border border-slate-200 bg-white hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
                           title="Print Box Packaging Slip"
                         >
                           <Printer size={13} />

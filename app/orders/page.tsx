@@ -18,6 +18,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
+import { usePrinter } from "@/context/PrinterContext";
 import SearchableSelect from "@/components/SearchableSelect";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import {
@@ -206,6 +207,7 @@ const ORDER_STATUS_LIST: OrderStatus[] = [
 
 export default function OrdersPage() {
   const { showToast } = useToast();
+  const { printReceipt } = usePrinter();
 
   // --- List View States ---
   const [orders, setOrders] = useState<OrderRecord[]>([]);
@@ -3097,7 +3099,31 @@ export default function OrdersPage() {
             >
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={() => {
+                  printReceipt({
+                    orderNumber: viewingOrder.orderNumber,
+                    dateStr: viewingOrder.deliveryDate || new Date().toISOString().split("T")[0],
+                    timeStr: viewingOrder.deliveryTime || "",
+                    storeName: viewingOrder.storeName,
+                    customerName: viewingOrder.customerName,
+                    customerPhone: viewingOrder.customerPhone,
+                    items: viewingOrder.items.map((i) => ({
+                      name: i.name,
+                      quantity: i.quantity,
+                      unit: i.unit,
+                      rate: i.rate,
+                      totalAmount: i.totalAmount,
+                    })),
+                    subtotal: viewingOrder.subtotal,
+                    discount: viewingOrder.discount,
+                    taxableSubtotal: viewingOrder.taxableSubtotal,
+                    cgst: viewingOrder.cgst,
+                    sgst: viewingOrder.sgst,
+                    grandTotal: viewingOrder.grandTotal,
+                    paymentMethod: viewingOrder.paymentMethod,
+                    splitDetails: viewingOrder.splitDetails,
+                  });
+                }}
                 className="px-3 py-1.5 text-xs rounded border bg-white hover:bg-slate-50 text-slate-700 font-medium cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs"
                 style={{ borderColor: "var(--color-border-base)" }}
               >

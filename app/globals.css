@@ -126,3 +126,33 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield !important;
 }
+
+/* Dedicated Thermal Slip Print Stylesheet */
+#thermal-receipt-root {
+  display: none;
+}
+
+@media print {
+  /* Hide the rest of the application when printing receipts */
+  body > *:not(#thermal-receipt-root) {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #thermal-receipt-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  @page {
+    margin: 0;
+  }
+}

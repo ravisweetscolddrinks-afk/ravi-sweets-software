@@ -17,7 +17,9 @@ import {
   Menu,
   X,
   Settings as SettingsIcon,
+  Printer,
 } from "lucide-react";
+import { usePrinter } from "@/context/PrinterContext";
 
 interface TopNavbarProps {
   onToggleMobileMenu?: () => void;
@@ -25,13 +27,7 @@ interface TopNavbarProps {
 }
 
 export default function TopNavbar({ onToggleMobileMenu, isMobileMenuOpen }: TopNavbarProps) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopyProject = () => {
-    navigator.clipboard.writeText("https://ravi-sweets-live.firebaseapp.com");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const { settings, setIsConnectModalOpen } = usePrinter();
 
   return (
     <header
@@ -119,18 +115,28 @@ export default function TopNavbar({ onToggleMobileMenu, isMobileMenuOpen }: TopN
           </span>
         </div> */}
 
-        {/* Connect Action Button */}
+        {/* Connect Action Button (Thermal Printer Connection) */}
         <button
-          onClick={handleCopyProject}
-          title="Live Firebase Service: Click to copy live endpoint"
-          className="ml-1 hidden md:flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-full text-white transition-opacity hover:opacity-90 shrink-0 font-normal"
-          style={{
-            backgroundColor: "var(--color-brand-primary)",
-          }}
+          onClick={() => setIsConnectModalOpen(true)}
+          title="Connect Thermal Printer (WebUSB, Bluetooth, ESC/POS)"
+          className={`ml-1 hidden md:flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-full text-white transition-all hover:opacity-90 shrink-0 font-normal cursor-pointer shadow-2xs ${
+            settings.isConnected ? "bg-emerald-600 hover:bg-emerald-700" : ""
+          }`}
+          style={
+            !settings.isConnected
+              ? { backgroundColor: "var(--color-brand-primary)" }
+              : undefined
+          }
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-200 animate-pulse" />
-          <span>{copied ? "Copied Endpoint!" : "Connect"}</span>
-          {copied ? <Check size={12} /> : <ExternalLink size={11} />}
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              settings.isConnected ? "bg-white animate-pulse" : "bg-blue-200 animate-pulse"
+            }`}
+          />
+          <Printer size={12} />
+          <span>
+            {settings.isConnected ? `Printer (${settings.paperSize === "3inch" ? "80mm" : "58mm"})` : "Connect"}
+          </span>
         </button>
       </div>
 
