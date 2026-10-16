@@ -157,6 +157,8 @@ export default function PosBillingPage() {
     city: "",
     email: "",
     address: "",
+    isB2b: false,
+    gstNumber: "",
   });
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -417,24 +419,156 @@ export default function PosBillingPage() {
     }
   };
 
-  // Barcode scanner auto-submit handler
+  // Barcode scanner auto-submit handler supporting `barcode*quantity`
   const handleBarcodeScan = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchBarcode.trim()) return;
+    const rawInput = searchBarcode.trim();
+    if (!rawInput) return;
 
-    const term = searchBarcode.trim().toLowerCase();
+    let codePart = rawInput;
+    let qtyPart: string | null = null;
+
+    if (rawInput.includes("*")) {
+      const splitIdx = rawInput.indexOf("*");
+      const left = rawInput.substring(0, splitIdx).trim();
+      const right = rawInput.substring(splitIdx + 1).trim();
+
+      const leftTerm = left.toLowerCase();
+      const rightTerm = right.toLowerCase();
+
+      const leftMatch = products.find(
+        (p) =>
+          (p.barcode && p.barcode.toLowerCase() === leftTerm) ||
+          (p.shortCode && p.shortCode.toLowerCase() === leftTerm) ||
+          (p.id && p.id.toLowerCase() === leftTerm)
+      );
+
+      if (leftMatch) {
+        codePart = left;
+        qtyPart = right;
+      } else {
+        const rightMatch = products.find(
+          (p) =>
+            (p.barcode && p.barcode.toLowerCase() === rightTerm) ||
+            (p.shortCode && p.shortCode.toLowerCase() === rightTerm) ||
+            (p.id && p.id.toLowerCase() === rightTerm)
+        );
+        if (rightMatch) {
+          codePart = right;
+          qtyPart = left;
+        } else {
+          codePart = left;
+          qtyPart = right;
+        }
+      }
+    }
+
+    const term = codePart.toLowerCase();
     const matched = products.find(
       (p) =>
         (p.barcode && p.barcode.toLowerCase() === term) ||
-        (p.shortCode && p.shortCode.toLowerCase() === term)
+        (p.shortCode && p.shortCode.toLowerCase() === term) ||
+        (p.id && p.id.toLowerCase() === term)
     );
 
-    if (matched) {
-      handleCatalogItemClick(matched);
-      setSearchBarcode("");
-    } else {
-      showToast(`No product matched barcode "${searchBarcode}"`, "error");
+    if (!matched) {
+      showToast(`No product matched barcode "${codePart}"`, "error");
+      return;
     }
+
+    if (isWeightProduct(matched.unit)) {
+      // Weight / Litre based product
+      if (qtyPart) {
+        let weightInKg: number;
+        if (qtyPart.includes(".")) {
+          weightInKg = parseFloat(qtyPart);
+        } else {
+          const num = parseFloat(qtyPart);
+          // If 4-digit or standard grams string (e.g. 0450, 450, 250, 500, 1000)
+          if (qtyPart.startsWith("0") || num >= 10) {
+            weightInKg = Number((num / 1000).toFixed(3));
+          } else {
+            weightInKg = num; // e.g. 1 KG, 2 KG
+          }
+        }
+
+        if (isNaN(weightInKg) || weightInKg <= 0) {
+          showToast(`Invalid weight quantity "${qtyPart}"`, "error");
+          return;
+        }
+
+        const lineAmt = Number((weightInKg * matched.amount).toFixed(2));
+        const newLine: PosCartLine = {
+          lineId: `pos_wt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          productId: matched.id,
+          name: matched.name,
+          unit: matched.unit || "KG",
+          rate: matched.amount,
+          quantity: weightInKg,
+          totalAmount: lineAmt,
+          imageUrl: matched.imageUrl,
+          piecesPerKg: matched.piecesPerKg,
+          kgPerTray: matched.kgPerTray,
+        };
+
+        setCart((prev) => [...prev, newLine]);
+        showToast(`Added ${matched.name} (${weightInKg} ${matched.unit}) - ₹${lineAmt}`, "success");
+        setSearchBarcode("");
+      } else {
+        // No quantity provided: open weight customization modal
+        setEditingLineId(null);
+        setWeightModalProduct(matched);
+        setWeightInput(1);
+        setAmountInput(matched.amount);
+        setIsWeightModalOpen(true);
+        setSearchBarcode("");
+      }
+    } else {
+      // Piece / Box based product
+      let qtyToAdd = 1;
+      if (qtyPart) {
+        const parsed = parseInt(qtyPart, 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          qtyToAdd = parsed;
+        }
+      }
+
+      setCart((prev) => {
+        const existingIdx = prev.findIndex((i) => i.productId === matched.id);
+        if (existingIdx !== -1) {
+          return prev.map((item, idx) =>
+            idx === existingIdx
+              ? {
+                  ...item,
+                  quantity: item.quantity + qtyToAdd,
+                  totalAmount: Number(((item.quantity + qtyToAdd) * item.rate).toFixed(2)),
+                }
+              : item
+          );
+        } else {
+          const newLine: PosCartLine = {
+            lineId: `pos_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            productId: matched.id,
+            name: matched.name,
+            unit: matched.unit || "piece",
+            rate: matched.amount,
+            quantity: qtyToAdd,
+            totalAmount: Number((qtyToAdd * matched.amount).toFixed(2)),
+            imageUrl: matched.imageUrl,
+            piecesPerKg: matched.piecesPerKg,
+            kgPerTray: matched.kgPerTray,
+          };
+          return [...prev, newLine];
+        }
+      });
+
+      showToast(`Added ${qtyToAdd} × ${matched.name}`, "success");
+      setSearchBarcode("");
+    }
+
+    setTimeout(() => {
+      barcodeInputRef.current?.focus();
+    }, 50);
   };
 
   // Confirm weight modal
@@ -714,11 +848,8 @@ export default function PosBillingPage() {
 
       const cleanSaleRecord = sanitizeForFirestore(saleRecord);
 
-      // 1. Save to walk_in_sales collection
+      // 1. Save exclusively to walk_in_sales collection (not to orders collection, so POS sales remain in Walk-In Sales only)
       await addDoc(collection(db, "walk_in_sales"), cleanSaleRecord);
-
-      // 2. Also save to orders collection with "Delivered" status so unified reports remain consistent
-      await addDoc(collection(db, "orders"), cleanSaleRecord);
 
       // 3. Deduct stock from store_inventory for each item sold in this store
       for (const item of cart) {
@@ -811,6 +942,11 @@ export default function PosBillingPage() {
       return;
     }
 
+    if (customerForm.isB2b && !customerForm.gstNumber.trim()) {
+      showToast("GST Number is required for B2B Customers", "error");
+      return;
+    }
+
     try {
       const docRef = await addDoc(collection(db, "customers"), {
         name: customerForm.name.trim(),
@@ -818,12 +954,14 @@ export default function PosBillingPage() {
         city: customerForm.city.trim(),
         email: customerForm.email.trim(),
         address: customerForm.address.trim(),
+        isB2b: !!customerForm.isB2b,
+        gstNumber: customerForm.isB2b ? customerForm.gstNumber.trim().toUpperCase() : "",
         createdAt: serverTimestamp(),
       });
 
       setSelectedCustomerId(docRef.id);
       setIsAddCustomerOpen(false);
-      setCustomerForm({ name: "", phone: "", city: "", email: "", address: "" });
+      setCustomerForm({ name: "", phone: "", city: "", email: "", address: "", isB2b: false, gstNumber: "" });
       showToast(`Customer "${customerForm.name}" created and selected!`, "success");
     } catch (err: any) {
       showToast("Error adding customer: " + err.message, "error");
@@ -923,7 +1061,7 @@ export default function PosBillingPage() {
                 <input
                   ref={barcodeInputRef}
                   type="text"
-                  placeholder="Scan sweet barcode or enter short code..."
+                  placeholder="Scan barcode or enter barcode*quantity (e.g. 1001*0450 for 450g or 1002*5 for 5 pcs)..."
                   value={searchBarcode}
                   onChange={(e) => setSearchBarcode(e.target.value)}
                   className="w-full pl-9 pr-20 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#348bdd] font-mono"
@@ -1667,6 +1805,49 @@ export default function PosBillingPage() {
                   onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
                 />
+              </div>
+
+              {/* B2B Customer Toggle */}
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-medium text-slate-800 flex items-center gap-1.5 cursor-pointer">
+                      <span>Is B2B Customer?</span>
+                    </label>
+                    <p className="text-[10px] text-slate-400">Enable for business invoices with GSTIN</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCustomerForm((p) => ({ ...p, isB2b: !p.isB2b }))}
+                    className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
+                      customerForm.isB2b ? "bg-[#348bdd]" : "bg-slate-300"
+                    }`}
+                  >
+                    <div
+                      className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                        customerForm.isB2b ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {customerForm.isB2b && (
+                  <div className="animate-in fade-in duration-150">
+                    <label className="block text-[11px] font-mono font-medium text-slate-700 uppercase mb-1">
+                      GST Number (GSTIN) *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 37AAAAA0000A1Z5"
+                      value={customerForm.gstNumber}
+                      onChange={(e) =>
+                        setCustomerForm({ ...customerForm, gstNumber: e.target.value.toUpperCase() })
+                      }
+                      required={customerForm.isB2b}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono uppercase focus:ring-1 focus:ring-[#348bdd] focus:outline-none"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="pt-2 flex justify-end gap-2">

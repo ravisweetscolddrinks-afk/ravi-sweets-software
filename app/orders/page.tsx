@@ -64,7 +64,9 @@ import {
   DollarSign,
   Printer,
   Wallet,
-  History
+  History,
+  FileText,
+  Building2
 } from "lucide-react";
 
 // --- TYPES ---
@@ -123,6 +125,8 @@ export interface OrderRecord {
   customerName: string;
   customerPhone: string;
   customerAddress?: string;
+  customerGstNumber?: string;
+  isB2b?: boolean;
   storeId: string;
   storeName: string;
   deliveryDate: string; // YYYY-MM-DD
@@ -156,6 +160,8 @@ export interface CustomerOption {
   city?: string;
   address?: string;
   email?: string;
+  isB2b?: boolean;
+  gstNumber?: string;
 }
 
 export interface StoreOption {
@@ -238,6 +244,30 @@ export default function OrdersPage() {
     pricingType: "inclusive",
   });
 
+  const [businessProfile, setBusinessProfile] = useState<{
+    tradeName: string;
+    legalName: string;
+    phone: string;
+    altPhone: string;
+    email: string;
+    address: string;
+    city: string;
+    state: string;
+    pincode: string;
+    gstNumber: string;
+  }>({
+    tradeName: "Ravi Sweets & Cold Drinks",
+    legalName: "Ravi Sweets",
+    phone: "+91 94402 61276",
+    altPhone: "",
+    email: "contact@ravisweets.com",
+    address: "Main Road, Chirala",
+    city: "Chirala",
+    state: "Andhra Pradesh",
+    pincode: "523155",
+    gstNumber: "",
+  });
+
   // --- Full Screen Modal (Add / Edit) States ---
   const [isOrderModalOpen, setIsOrderModalOpen] = useState<boolean>(false);
   const [modalMode, setModalMode] = useState<"create" | "edit" | "view">("create");
@@ -246,6 +276,10 @@ export default function OrdersPage() {
 
   // Dedicated View Order Details Modal State
   const [viewingOrder, setViewingOrder] = useState<OrderRecord | null>(null);
+
+  // A4 Tax Invoice Modal State & Print on Creation Prompt State
+  const [a4InvoiceOrder, setA4InvoiceOrder] = useState<OrderRecord | null>(null);
+  const [createdOrderForPrint, setCreatedOrderForPrint] = useState<OrderRecord | null>(null);
 
   // Dedicated Payment Management Modal State
   const [paymentManagingOrder, setPaymentManagingOrder] = useState<OrderRecord | null>(null);
@@ -262,6 +296,8 @@ export default function OrdersPage() {
     city: "",
     email: "",
     address: "",
+    isB2b: false,
+    gstNumber: "",
   });
   const [quickCustomerError, setQuickCustomerError] = useState<string>("");
 
@@ -345,6 +381,29 @@ export default function OrdersPage() {
       }
     );
 
+    // Realtime Business Profile Listener
+    const unsubProfile = onSnapshot(
+      doc(db, "settings", "business_profile"),
+      (profileSnap) => {
+        if (profileSnap.exists()) {
+          const data = profileSnap.data();
+          setBusinessProfile((prev) => ({
+            ...prev,
+            tradeName: data.tradeName || prev.tradeName,
+            legalName: data.legalName || prev.legalName,
+            phone: data.phone || prev.phone,
+            altPhone: data.altPhone || prev.altPhone,
+            email: data.email || prev.email,
+            address: data.address || prev.address,
+            city: data.city || prev.city,
+            state: data.state || prev.state,
+            pincode: data.pincode || prev.pincode,
+          }));
+        }
+      },
+      (err) => console.warn("Realtime profile error:", err)
+    );
+
     // Realtime GST Settings Listener
     const unsubGst = onSnapshot(
       doc(db, "settings", "gst_settings"),
@@ -356,6 +415,12 @@ export default function OrdersPage() {
             percentage: d.gstPercentage || 5,
             pricingType: d.pricingType === "exclusive" ? "exclusive" : "inclusive",
           });
+          if (d.gstNumber) {
+            setBusinessProfile((prev) => ({
+              ...prev,
+              gstNumber: d.gstNumber,
+            }));
+          }
         }
       },
       (err) => console.warn("Realtime GST error:", err)
@@ -430,6 +495,7 @@ export default function OrdersPage() {
     // Clean up all subscriptions on unmount
     return () => {
       unsubOrders();
+      unsubProfile();
       unsubGst();
       unsubCustomers();
       unsubStores();
@@ -494,6 +560,16 @@ export default function OrdersPage() {
     return orders.filter((o) => {
       if (!o.id || seenIds.has(o.id)) return false;
       seenIds.add(o.id);
+
+      // Exclude Walk-In POS counter billing (should display only in Walk-in Sales)
+      if (
+        o.packingDescription?.toLowerCase().includes("walk-in pos") ||
+        (o as any).source === "walk_in_pos" ||
+        (o as any).isWalkInPos ||
+        o.orderNumber?.startsWith("POS-")
+      ) {
+        return false;
+      }
 
       // Date filter check
       const dateToCheck = o.deliveryDate || (o.createdAt?.toDate ? o.createdAt.toDate().toISOString().split("T")[0] : "");
@@ -772,6 +848,11 @@ export default function OrdersPage() {
       return;
     }
 
+    if (quickCustomerForm.isB2b && !quickCustomerForm.gstNumber.trim()) {
+      setQuickCustomerError("GSTIN / GST Number is required for B2B Customers");
+      return;
+    }
+
     try {
       const colRef = collection(db, "customers");
       const docRef = await addDoc(colRef, {
@@ -780,6 +861,8 @@ export default function OrdersPage() {
         city: quickCustomerForm.city.trim(),
         email: quickCustomerForm.email.trim(),
         address: quickCustomerForm.address.trim(),
+        isB2b: !!quickCustomerForm.isB2b,
+        gstNumber: quickCustomerForm.isB2b ? quickCustomerForm.gstNumber.trim().toUpperCase() : "",
         createdAt: serverTimestamp(),
       });
 
@@ -790,12 +873,14 @@ export default function OrdersPage() {
         city: quickCustomerForm.city.trim(),
         email: quickCustomerForm.email.trim(),
         address: quickCustomerForm.address.trim(),
+        isB2b: !!quickCustomerForm.isB2b,
+        gstNumber: quickCustomerForm.isB2b ? quickCustomerForm.gstNumber.trim().toUpperCase() : "",
       };
 
       setCustomersList((prev) => [created, ...prev]);
       setSelectedCustomerId(docRef.id);
       setIsQuickCustomerOpen(false);
-      setQuickCustomerForm({ name: "", phone: "", city: "", email: "", address: "" });
+      setQuickCustomerForm({ name: "", phone: "", city: "", email: "", address: "", isB2b: false, gstNumber: "" });
       setQuickCustomerError("");
       showToast(`Customer "${created.name}" created and selected!`, "success");
     } catch (err: any) {
@@ -1015,6 +1100,8 @@ export default function OrdersPage() {
         customerName: cust?.name || "Walk-In Customer",
         customerPhone: cust?.phone || "",
         customerAddress: cust?.address || "",
+        customerGstNumber: cust?.gstNumber || "",
+        isB2b: !!cust?.isB2b,
         storeId: selectedStoreId || "",
         storeName: store?.name || "Main Chirala Store",
         deliveryDate: deliveryDate || "",
@@ -1102,26 +1189,62 @@ export default function OrdersPage() {
         );
 
         showToast(`Order "${generatedNumber}" updated successfully!`, "success");
+        setIsOrderModalOpen(false);
       } else {
         // Create Order
         const colRef = collection(db, "orders");
-        await addDoc(colRef, {
+        const docRef = await addDoc(colRef, {
           ...orderPayload,
           createdAt: serverTimestamp(),
         });
 
-        // onSnapshot listener will automatically receive the newly added doc from Firestore
-        // and update the orders list without duplicate race conditions!
+        const createdOrder: OrderRecord = {
+          id: docRef.id,
+          ...orderPayload,
+        };
+
+        setIsOrderModalOpen(false);
+        setCreatedOrderForPrint(createdOrder);
         showToast(`Order "${generatedNumber}" created successfully!`, "success");
       }
-
-      setIsOrderModalOpen(false);
     } catch (err: any) {
       console.error("Save order error:", err);
       showToast("Error saving order: " + (err.message || "Unknown error"), "error");
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Helper for thermal print
+  const handlePrintThermal = (order: OrderRecord) => {
+    printReceipt({
+      orderNumber: order.orderNumber,
+      dateStr: order.deliveryDate || new Date().toISOString().split("T")[0],
+      timeStr: order.deliveryTime || "",
+      storeName: order.storeName,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      items: order.items.map((i) => ({
+        name: i.name,
+        quantity: i.quantity,
+        unit: i.unit,
+        rate: i.rate,
+        totalAmount: i.totalAmount,
+      })),
+      subtotal: order.subtotal,
+      discount: order.discount,
+      taxableSubtotal: order.taxableSubtotal,
+      cgst: order.cgst,
+      sgst: order.sgst,
+      grandTotal: order.grandTotal,
+      paymentMethod: order.paymentMethod,
+      splitDetails: order.splitDetails,
+    });
+  };
+
+  // Helper for opening A4 Tax Invoice modal
+  const handleOpenA4Invoice = (order: OrderRecord) => {
+    setA4InvoiceOrder(order);
   };
 
   // Delete Order
@@ -1585,9 +1708,27 @@ export default function OrdersPage() {
                       </div>
                     </td>
 
-                    {/* Actions: View, Payment Management, Edit, Delete */}
+                    {/* Actions: View, Thermal Print, A4, Payment, Edit, Delete */}
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
+                        {/* Thermal Print */}
+                        <button
+                          onClick={() => handlePrintThermal(o)}
+                          className="w-7 h-7 rounded-md flex items-center justify-center transition-all bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200 cursor-pointer shadow-2xs"
+                          title="Print Thermal Receipt"
+                        >
+                          <Printer size={13} />
+                        </button>
+
+                        {/* A4 Tax Invoice */}
+                        <button
+                          onClick={() => handleOpenA4Invoice(o)}
+                          className="w-7 h-7 rounded-md flex items-center justify-center transition-all bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-100 cursor-pointer shadow-2xs"
+                          title="Print A4 Tax Invoice"
+                        >
+                          <FileText size={13} />
+                        </button>
+
                         {/* View - Sky blue */}
                         <button
                           onClick={() => handleOpenViewModal(o)}
@@ -2679,6 +2820,72 @@ export default function OrdersPage() {
                 />
               </div>
 
+              {/* B2B Customer Toggle */}
+              <div
+                className="p-3 rounded-lg border flex flex-col gap-2.5 transition-all"
+                style={{
+                  backgroundColor: quickCustomerForm.isB2b ? "var(--color-brand-primary-light, #f0f7ff)" : "var(--color-bg-subtle, #f8fafc)",
+                  borderColor: quickCustomerForm.isB2b ? "var(--color-brand-primary, #348bdd)" : "var(--color-border-subtle, #e2e8f0)",
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Building2
+                      size={15}
+                      className={quickCustomerForm.isB2b ? "text-[#348bdd]" : "text-slate-400"}
+                    />
+                    <div>
+                      <span className="text-xs font-medium text-slate-800 block">
+                        Is B2B Customer?
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Enable for wholesale, commercial & GST tax invoice
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setQuickCustomerForm((prev) => ({
+                        ...prev,
+                        isB2b: !prev.isB2b,
+                      }))
+                    }
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      quickCustomerForm.isB2b ? "bg-[#348bdd]" : "bg-slate-300"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        quickCustomerForm.isB2b ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {quickCustomerForm.isB2b && (
+                  <div className="pt-2 border-t border-blue-100">
+                    <label className="block text-[11px] uppercase tracking-wider mb-1 font-medium text-slate-700">
+                      GSTIN / GST Number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={15}
+                      placeholder="e.g. 37AAAAA0000A1Z5"
+                      value={quickCustomerForm.gstNumber}
+                      onChange={(e) =>
+                        setQuickCustomerForm((prev) => ({
+                          ...prev,
+                          gstNumber: e.target.value.toUpperCase(),
+                        }))
+                      }
+                      className="w-full text-xs px-2.5 py-1.5 rounded-md border bg-white focus:outline-none font-mono uppercase font-medium focus:ring-1 focus:ring-[var(--color-brand-primary)]"
+                      style={{ borderColor: "var(--color-border-base)" }}
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Actions */}
               <div className="pt-2 flex justify-end gap-2">
                 <button
@@ -3111,39 +3318,26 @@ export default function OrdersPage() {
               className="px-6 py-3 border-t bg-slate-50 flex items-center justify-between shrink-0"
               style={{ borderColor: "var(--color-border-subtle)" }}
             >
-              <button
-                type="button"
-                onClick={() => {
-                  printReceipt({
-                    orderNumber: viewingOrder.orderNumber,
-                    dateStr: viewingOrder.deliveryDate || new Date().toISOString().split("T")[0],
-                    timeStr: viewingOrder.deliveryTime || "",
-                    storeName: viewingOrder.storeName,
-                    customerName: viewingOrder.customerName,
-                    customerPhone: viewingOrder.customerPhone,
-                    items: viewingOrder.items.map((i) => ({
-                      name: i.name,
-                      quantity: i.quantity,
-                      unit: i.unit,
-                      rate: i.rate,
-                      totalAmount: i.totalAmount,
-                    })),
-                    subtotal: viewingOrder.subtotal,
-                    discount: viewingOrder.discount,
-                    taxableSubtotal: viewingOrder.taxableSubtotal,
-                    cgst: viewingOrder.cgst,
-                    sgst: viewingOrder.sgst,
-                    grandTotal: viewingOrder.grandTotal,
-                    paymentMethod: viewingOrder.paymentMethod,
-                    splitDetails: viewingOrder.splitDetails,
-                  });
-                }}
-                className="px-3 py-1.5 text-xs rounded border bg-white hover:bg-slate-50 text-slate-700 font-medium cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs"
-                style={{ borderColor: "var(--color-border-base)" }}
-              >
-                <Printer size={13} />
-                <span>Print Order Slip</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePrintThermal(viewingOrder)}
+                  className="px-3 py-1.5 text-xs rounded border bg-white hover:bg-slate-50 text-slate-700 font-medium cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs"
+                  style={{ borderColor: "var(--color-border-base)" }}
+                >
+                  <Printer size={13} />
+                  <span>Thermal Slip</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenA4Invoice(viewingOrder)}
+                  className="px-3 py-1.5 text-xs rounded border bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs border-indigo-200"
+                >
+                  <FileText size={13} />
+                  <span>A4 Tax Invoice</span>
+                </button>
+              </div>
 
               <div className="flex items-center gap-2">
                 <button
@@ -3431,6 +3625,423 @@ export default function OrdersPage() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          8. POST ORDER CREATION PRINT PROMPT MODAL
+         ========================================================================= */}
+      {createdOrderForPrint && (
+        <div className="fixed inset-0 z-70 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div
+            className="w-full max-w-md rounded-xl border bg-white shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+            style={{ borderColor: "var(--color-border-base)" }}
+          >
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-3 border border-emerald-100 shadow-2xs">
+                <CheckCircle2 size={24} />
+              </div>
+              <h3 className="text-sm font-medium text-slate-900">
+                Order Created Successfully!
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Order <span className="font-mono font-medium text-[#348bdd]">#{createdOrderForPrint.orderNumber}</span> for <span className="font-medium text-slate-800">{createdOrderForPrint.customerName}</span> has been booked.
+              </p>
+              <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-200/80 text-xs font-mono flex items-center justify-between">
+                <span className="text-slate-600">Grand Total:</span>
+                <span className="text-sm font-medium text-[#348bdd]">₹{createdOrderForPrint.grandTotal.toFixed(2)}</span>
+              </div>
+
+              <div className="mt-5 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintThermal(createdOrderForPrint)}
+                    className="w-full py-2 px-3 rounded-lg border bg-slate-50 hover:bg-slate-100 text-slate-800 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer border-slate-200 shadow-2xs"
+                  >
+                    <Printer size={14} className="text-slate-600" />
+                    <span>Thermal Slip</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const order = createdOrderForPrint;
+                      setCreatedOrderForPrint(null);
+                      setA4InvoiceOrder(order);
+                    }}
+                    className="w-full py-2 px-3 rounded-lg border bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer border-indigo-200 shadow-2xs"
+                  >
+                    <FileText size={14} className="text-indigo-600" />
+                    <span>A4 Tax Invoice</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCreatedOrderForPrint(null)}
+                  className="w-full py-2 px-3 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-50 font-medium text-xs transition-colors cursor-pointer"
+                >
+                  Close & Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          9. A4 TAX INVOICE PRINT MODAL
+         ========================================================================= */}
+      {a4InvoiceOrder && (
+        <div className="fixed inset-0 z-80 bg-black/60 backdrop-blur-xs flex flex-col items-center overflow-y-auto p-4 sm:p-6 print:p-0 print:bg-white print:static animate-in fade-in duration-150">
+          {/* Print Action Toolbar (Hidden during browser printing) */}
+          <div className="w-full max-w-[210mm] mb-4 bg-white/95 backdrop-blur-md rounded-xl p-3 border shadow-lg flex items-center justify-between gap-3 shrink-0 print:hidden border-slate-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100">
+                <FileText size={16} />
+              </div>
+              <div>
+                <h4 className="text-xs font-medium text-slate-900">
+                  A4 Tax Invoice Preview
+                </h4>
+                <p className="text-[11px] font-mono text-slate-500">
+                  Order #{a4InvoiceOrder.orderNumber} • {a4InvoiceOrder.customerName}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-4 py-2 text-xs rounded-lg text-white font-medium cursor-pointer shadow-sm flex items-center gap-1.5 transition-opacity hover:opacity-90"
+                style={{ backgroundColor: "var(--color-brand-primary)" }}
+              >
+                <Printer size={14} />
+                <span>Print A4 Invoice</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setA4InvoiceOrder(null)}
+                className="px-3.5 py-2 text-xs rounded-lg border bg-white hover:bg-slate-50 text-slate-700 font-medium cursor-pointer border-slate-200 shadow-2xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+
+          {/* Embedded Print Scoped Style */}
+          <style dangerouslySetInnerHTML={{ __html: `
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              #a4-invoice-sheet, #a4-invoice-sheet * {
+                visibility: visible !important;
+              }
+              #a4-invoice-sheet {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                min-height: auto !important;
+                margin: 0 !important;
+                padding: 8mm !important;
+                box-shadow: none !important;
+                border: none !important;
+                background: #ffffff !important;
+              }
+              @page {
+                size: A4 portrait;
+                margin: 8mm;
+              }
+            }
+          `}} />
+
+          {/* A4 Invoice Paper Sheet */}
+          <div
+            id="a4-invoice-sheet"
+            className="w-full max-w-[210mm] min-h-[297mm] bg-white text-slate-900 p-8 sm:p-10 shadow-2xl rounded-sm print:shadow-none print:p-0 print:max-w-none print:w-full border border-slate-200 flex flex-col justify-between"
+          >
+            <div>
+              {/* Header: Company Details & Invoice Metadata */}
+              <div className="pb-6 border-b-2 border-slate-900 flex justify-between items-start gap-6">
+                <div>
+                  <h1 className="text-xl font-medium tracking-tight text-slate-900 uppercase">
+                    {businessProfile.tradeName || "Ravi Sweets & Cold Drinks"}
+                  </h1>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    {businessProfile.legalName || "Ravi Sweets"} • Pure Ghee Sweets, Bakery & Savouries
+                  </p>
+                  <p className="text-xs text-slate-600 mt-1 max-w-sm">
+                    {businessProfile.address || "Main Road"}, {businessProfile.city || "Chirala"}, {businessProfile.state || "Andhra Pradesh"} - {businessProfile.pincode || "523155"}
+                  </p>
+                  <div className="text-xs text-slate-700 font-mono mt-1.5 space-y-0.5">
+                    <div>Phone: <span className="text-slate-900">{businessProfile.phone || "+91 94402 61276"}</span> {businessProfile.altPhone && ` / ${businessProfile.altPhone}`}</div>
+                    <div>Email: <span className="text-slate-900">{businessProfile.email || "contact@ravisweets.com"}</span></div>
+                    <div>GSTIN: <span className="font-medium text-slate-900">{businessProfile.gstNumber || "37AAAAA0000A1Z5"}</span></div>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <div className="inline-block px-3 py-1 bg-slate-900 text-white text-xs font-medium uppercase tracking-wider rounded-xs">
+                    Tax Invoice
+                  </div>
+                  <div className="mt-3 text-xs font-mono space-y-1">
+                    <div>
+                      <span className="text-slate-500">Invoice No: </span>
+                      <span className="font-medium text-slate-900">{a4InvoiceOrder.orderNumber}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Invoice Date: </span>
+                      <span className="text-slate-900">{a4InvoiceOrder.deliveryDate || new Date().toISOString().split("T")[0]}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Delivery Time: </span>
+                      <span className="text-slate-900">{a4InvoiceOrder.deliveryTime || "11:00 AM"}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Store / Branch: </span>
+                      <span className="text-slate-900">{a4InvoiceOrder.storeName || "Main Chirala Store"}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bill From and Bill To Grid */}
+              <div className="grid grid-cols-2 gap-6 py-5 border-b border-slate-300">
+                {/* Bill From */}
+                <div className="p-3.5 rounded bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 block mb-1.5">
+                    Bill From (Supplier)
+                  </span>
+                  <div className="text-xs space-y-0.5 text-slate-800">
+                    <div className="font-medium text-slate-900">{businessProfile.tradeName || "Ravi Sweets & Cold Drinks"}</div>
+                    <div className="text-slate-600">{businessProfile.address || "Main Road, Chirala"}</div>
+                    <div className="text-slate-600">{businessProfile.city || "Chirala"}, {businessProfile.state || "Andhra Pradesh"} - {businessProfile.pincode || "523155"}</div>
+                    <div className="font-mono text-[11px] pt-1">
+                      <span className="text-slate-500">GSTIN: </span>
+                      <span className="font-medium text-slate-900">{businessProfile.gstNumber || "37AAAAA0000A1Z5"}</span>
+                    </div>
+                    <div className="font-mono text-[11px]">
+                      <span className="text-slate-500">State: </span>
+                      <span>Andhra Pradesh (Code: 37)</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bill To */}
+                <div className="p-3.5 rounded bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 block mb-1.5">
+                    Bill To (Recipient / Customer)
+                  </span>
+                  <div className="text-xs space-y-0.5 text-slate-800">
+                    <div className="font-medium text-slate-900">{a4InvoiceOrder.customerName}</div>
+                    <div className="font-mono text-[11px] text-slate-700">Phone: {a4InvoiceOrder.customerPhone || "—"}</div>
+                    <div className="text-slate-600">{a4InvoiceOrder.customerAddress || "Walk-In Customer / Counter"}</div>
+                    <div className="font-mono text-[11px] pt-1">
+                      <span className="text-slate-500">Customer Type: </span>
+                      <span className="font-medium text-slate-900">
+                        {a4InvoiceOrder.isB2b ? "B2B Commercial / Wholesale" : "Retail Consumer"}
+                      </span>
+                    </div>
+                    <div className="font-mono text-[11px]">
+                      <span className="text-slate-500">GSTIN: </span>
+                      <span className="font-medium text-slate-900">
+                        {a4InvoiceOrder.customerGstNumber || (a4InvoiceOrder.isB2b ? "Pending" : "Unregistered Consumer")}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <div className="py-5">
+                <table className="w-full text-left text-xs border border-slate-300">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-300 text-slate-800 font-medium">
+                      <th className="py-2.5 px-3 w-10 text-center border-r border-slate-300">#</th>
+                      <th className="py-2.5 px-3 border-r border-slate-300">Item Description</th>
+                      <th className="py-2.5 px-3 w-20 text-center border-r border-slate-300">Unit</th>
+                      <th className="py-2.5 px-3 w-24 text-right border-r border-slate-300">Rate (₹)</th>
+                      <th className="py-2.5 px-3 w-24 text-right border-r border-slate-300">Qty / Wt</th>
+                      <th className="py-2.5 px-3 w-28 text-right">Amount (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {a4InvoiceOrder.items.map((item, idx) => (
+                      <tr key={item.id || idx} className="text-slate-800">
+                        <td className="py-2.5 px-3 text-center border-r border-slate-200 font-mono text-[11px]">
+                          {idx + 1}
+                        </td>
+                        <td className="py-2.5 px-3 border-r border-slate-200">
+                          <div className="font-medium text-slate-900">{item.name}</div>
+                          {item.manufacturingDescription && (
+                            <div className="text-[10px] text-slate-500 mt-0.5 italic">
+                              Note: {item.manufacturingDescription}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-center border-r border-slate-200 font-mono uppercase text-[11px] text-slate-600">
+                          {item.unit}
+                        </td>
+                        <td className="py-2.5 px-3 text-right border-r border-slate-200 font-mono text-[11px]">
+                          ₹{Number(item.rate).toFixed(2)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right border-r border-slate-200 font-mono text-[11px]">
+                          {item.unit.toLowerCase() === "kg"
+                            ? `${item.quantity} KG`
+                            : `${item.quantity} ${item.unit}`}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-900">
+                          ₹{Number(item.totalAmount).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Order Summary Breakdown Grid */}
+              <div className="grid grid-cols-2 gap-6 pt-2 pb-6 border-b border-slate-300">
+                {/* Left: Amount in Words, Payment Mode, Special Instructions */}
+                <div className="space-y-3 text-xs">
+                  <div className="p-3 rounded bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[10px] uppercase font-medium tracking-wider text-slate-500 block">
+                      Amount in Words
+                    </span>
+                    <p className="font-medium text-slate-900 italic text-xs">
+                      {(() => {
+                        const num = a4InvoiceOrder.grandTotal;
+                        if (!num || isNaN(num) || num <= 0) return "Zero Rupees Only";
+                        const a = ["", "One ", "Two ", "Three ", "Four ", "Five ", "Six ", "Seven ", "Eight ", "Nine ", "Ten ", "Eleven ", "Twelve ", "Thirteen ", "Fourteen ", "Fifteen ", "Sixteen ", "Seventeen ", "Eighteen ", "Nineteen "];
+                        const b = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+                        const formatSection = (n: number): string => {
+                          let str = "";
+                          if (n > 99) { str += a[Math.floor(n / 100)] + "Hundred "; n %= 100; }
+                          if (n > 19) { str += b[Math.floor(n / 10)] + " " + a[n % 10]; } else if (n > 0) { str += a[n]; }
+                          return str;
+                        };
+                        const integerPart = Math.floor(num);
+                        let res = "";
+                        const crore = Math.floor(integerPart / 10000000);
+                        const lakh = Math.floor((integerPart % 10000000) / 100000);
+                        const thousand = Math.floor((integerPart % 100000) / 1000);
+                        const rem = integerPart % 1000;
+                        if (crore > 0) res += formatSection(crore) + "Crore ";
+                        if (lakh > 0) res += formatSection(lakh) + "Lakh ";
+                        if (thousand > 0) res += formatSection(thousand) + "Thousand ";
+                        if (rem > 0) res += formatSection(rem);
+                        return (res.trim() || "Zero") + " Rupees Only";
+                      })()}
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded bg-slate-50 border border-slate-200 space-y-1 text-xs">
+                    <span className="text-[10px] uppercase font-medium tracking-wider text-slate-500 block">
+                      Payment Details
+                    </span>
+                    <div className="flex items-center justify-between font-mono text-[11px]">
+                      <span className="text-slate-600">Payment Mode:</span>
+                      <span className="font-medium text-slate-900">{a4InvoiceOrder.paymentMethod}</span>
+                    </div>
+                    <div className="flex items-center justify-between font-mono text-[11px]">
+                      <span className="text-slate-600">Payment Status:</span>
+                      <span className="font-medium text-slate-900">{a4InvoiceOrder.paymentStatus}</span>
+                    </div>
+                    {a4InvoiceOrder.packingDescription && (
+                      <div className="pt-1.5 border-t border-slate-200 text-slate-600 text-[11px]">
+                        <span className="font-medium text-slate-700">Packing Notes: </span>
+                        {a4InvoiceOrder.packingDescription}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: Calculations Table */}
+                <div className="space-y-1.5 text-xs font-mono">
+                  <div className="flex justify-between py-1 text-slate-700">
+                    <span>Items Subtotal:</span>
+                    <span>₹{Number(a4InvoiceOrder.subtotal).toFixed(2)}</span>
+                  </div>
+
+                  {a4InvoiceOrder.discount > 0 && (
+                    <div className="flex justify-between py-1 text-emerald-700">
+                      <span>Discount:</span>
+                      <span>-₹{Number(a4InvoiceOrder.discount).toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between py-1 text-slate-700 border-t border-slate-200">
+                    <span>Taxable Value:</span>
+                    <span>₹{Number(a4InvoiceOrder.taxableSubtotal).toFixed(2)}</span>
+                  </div>
+
+                  {a4InvoiceOrder.isGstEnabled && a4InvoiceOrder.gstPercentage > 0 && (
+                    <>
+                      <div className="flex justify-between py-1 text-slate-600 text-[11px]">
+                        <span>CGST ({a4InvoiceOrder.gstPercentage / 2}%):</span>
+                        <span>₹{Number(a4InvoiceOrder.cgst).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between py-1 text-slate-600 text-[11px]">
+                        <span>SGST ({a4InvoiceOrder.gstPercentage / 2}%):</span>
+                        <span>₹{Number(a4InvoiceOrder.sgst).toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="flex justify-between py-2 border-t-2 border-b-2 border-slate-900 text-sm font-medium text-slate-900 bg-slate-50 px-2 rounded-xs">
+                    <span>Grand Total:</span>
+                    <span>₹{Number(a4InvoiceOrder.grandTotal).toFixed(2)}</span>
+                  </div>
+
+                  <div className="flex justify-between py-1 text-emerald-700">
+                    <span>Amount Paid:</span>
+                    <span>₹{Number(a4InvoiceOrder.receivedAmount).toFixed(2)}</span>
+                  </div>
+
+                  <div className="flex justify-between py-1 text-rose-700 font-medium border-t border-slate-200">
+                    <span>Balance Due:</span>
+                    <span>₹{Number(a4InvoiceOrder.balanceAmount).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Terms and Conditions */}
+              <div className="pt-4 text-[10px] text-slate-600 space-y-1">
+                <span className="font-medium text-slate-800 uppercase tracking-wider block mb-1">
+                  Terms & Conditions:
+                </span>
+                <ol className="list-decimal pl-4 space-y-0.5 text-slate-500">
+                  <li>Goods once sold will not be taken back or exchanged.</li>
+                  <li>Milk sweets, dairy items, and fresh cakes should be refrigerated and consumed within 24 hours.</li>
+                  <li>Advance paid for custom, party, or bulk festival orders is non-refundable once production starts.</li>
+                  <li>Subject to Chirala jurisdiction only.</li>
+                </ol>
+              </div>
+            </div>
+
+            {/* Bottom Signatures */}
+            <div className="pt-10 border-t border-slate-300 flex justify-between items-end text-xs text-slate-700">
+              <div className="text-center w-48">
+                <div className="border-t border-slate-400 pt-1.5 font-medium text-slate-800">
+                  Customer Signature
+                </div>
+              </div>
+
+              <div className="text-center w-56">
+                <div className="text-[11px] text-slate-500 mb-6">
+                  For {businessProfile.tradeName || "Ravi Sweets & Cold Drinks"}
+                </div>
+                <div className="border-t border-slate-400 pt-1.5 font-medium text-slate-800">
+                  Authorized Signatory
+                </div>
+              </div>
             </div>
           </div>
         </div>

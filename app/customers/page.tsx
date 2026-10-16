@@ -48,6 +48,8 @@ export interface CustomerItem {
   city?: string;
   address?: string;
   email?: string;
+  isB2b?: boolean;
+  gstNumber?: string;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -80,6 +82,8 @@ export default function CustomersPage() {
     city: "",
     address: "",
     email: "",
+    isB2b: false,
+    gstNumber: "",
   });
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
 
@@ -190,6 +194,8 @@ export default function CustomersPage() {
       city: "",
       address: "",
       email: "",
+      isB2b: false,
+      gstNumber: "",
     });
     setFormErrors({});
     setIsDrawerOpen(true);
@@ -204,6 +210,8 @@ export default function CustomersPage() {
       city: customer.city || "",
       address: customer.address || "",
       email: customer.email || "",
+      isB2b: !!customer.isB2b,
+      gstNumber: customer.gstNumber || "",
     });
     setFormErrors({});
     setIsDrawerOpen(true);
@@ -214,6 +222,9 @@ export default function CustomersPage() {
     const errors: { [key: string]: string } = {};
     if (!formData.name.trim()) errors.name = "Customer Name is mandatory";
     if (!formData.phone.trim()) errors.phone = "Mobile Number is mandatory";
+    if (formData.isB2b && !formData.gstNumber.trim()) {
+      errors.gstNumber = "GST Number is required for B2B Customers";
+    }
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -231,6 +242,8 @@ export default function CustomersPage() {
         city: formData.city.trim(),
         address: formData.address.trim(),
         email: formData.email.trim(),
+        isB2b: !!formData.isB2b,
+        gstNumber: formData.isB2b ? formData.gstNumber.trim().toUpperCase() : "",
         updatedAt: serverTimestamp(),
       };
 
@@ -616,7 +629,21 @@ export default function CustomersPage() {
                         <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 text-[11px] shrink-0 font-mono font-medium">
                           {c.name.charAt(0).toUpperCase()}
                         </div>
-                        <span className="truncate">{c.name}</span>
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="truncate">{c.name}</span>
+                            {c.isB2b && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-medium bg-blue-50 text-[#348bdd] border border-blue-200">
+                                B2B
+                              </span>
+                            )}
+                          </div>
+                          {c.gstNumber && (
+                            <div className="text-[10px] font-mono text-slate-400">
+                              GST: {c.gstNumber}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
 
@@ -883,7 +910,7 @@ export default function CustomersPage() {
               >
                 <MapPin size={15} className="text-slate-400 shrink-0 mt-0.5" />
                 <textarea
-                  rows={3}
+                  rows={2}
                   placeholder="e.g. Trunk Road, Opp. Municipal High School, Chirala, AP"
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
@@ -891,6 +918,54 @@ export default function CustomersPage() {
                   style={{ color: "var(--color-text-primary)" }}
                 />
               </div>
+            </div>
+
+            {/* B2B Customer Toggle */}
+            <div className="pt-2 border-t border-slate-100 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-xs font-medium text-slate-800 flex items-center gap-1.5 cursor-pointer">
+                    <Building size={14} className="text-[#348bdd]" />
+                    <span>Is B2B Customer?</span>
+                  </label>
+                  <p className="text-[10px] text-slate-400">Enable for business invoices with GSTIN</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData((p) => ({ ...p, isB2b: !p.isB2b }))}
+                  className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
+                    formData.isB2b ? "bg-[#348bdd]" : "bg-slate-300"
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      formData.isB2b ? "translate-x-4" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {formData.isB2b && (
+                <div className="animate-in fade-in duration-150">
+                  <label className="block text-xs uppercase tracking-wider mb-1 font-medium text-slate-700">
+                    GST Number (GSTIN) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 37AAAAA0000A1Z5"
+                    value={formData.gstNumber}
+                    onChange={(e) => {
+                      setFormData({ ...formData, gstNumber: e.target.value.toUpperCase() });
+                      if (formErrors.gstNumber) setFormErrors({ ...formErrors, gstNumber: "" });
+                    }}
+                    className="w-full px-3 py-2 border rounded-md text-xs font-mono uppercase bg-white focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                    style={{ borderColor: formErrors.gstNumber ? "#f87171" : "var(--color-border-base)" }}
+                  />
+                  {formErrors.gstNumber && (
+                    <p className="text-[11px] text-red-500 mt-1">{formErrors.gstNumber}</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
