@@ -18,15 +18,24 @@ import {
   X,
   Settings as SettingsIcon,
   Printer,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { usePrinter } from "@/context/PrinterContext";
 
 interface TopNavbarProps {
   onToggleMobileMenu?: () => void;
   isMobileMenuOpen?: boolean;
+  isSidebarCollapsed?: boolean;
+  onToggleSidebarCollapse?: () => void;
 }
 
-export default function TopNavbar({ onToggleMobileMenu, isMobileMenuOpen }: TopNavbarProps) {
+export default function TopNavbar({
+  onToggleMobileMenu,
+  isMobileMenuOpen,
+  isSidebarCollapsed,
+  onToggleSidebarCollapse,
+}: TopNavbarProps) {
   const { settings, setIsConnectModalOpen } = usePrinter();
 
   return (
@@ -48,6 +57,19 @@ export default function TopNavbar({ onToggleMobileMenu, isMobileMenuOpen }: TopN
         >
           {isMobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
+
+        {/* Desktop Sidebar Collapse / Expand Toggle */}
+        {onToggleSidebarCollapse && (
+          <button
+            type="button"
+            onClick={onToggleSidebarCollapse}
+            aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="hidden md:flex items-center justify-center p-1.5 rounded-md hover:bg-slate-100 transition-colors text-slate-500 hover:text-slate-800"
+          >
+            {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
+        )}
 
         {/* Brand Icon */}
         <Link

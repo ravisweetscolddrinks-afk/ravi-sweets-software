@@ -466,7 +466,7 @@ export default function DashboardOverview() {
   const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-7">
+    <div className="p-4 md:p-6 lg:p-8 w-full space-y-7">
       {/* =========================================================================
           TOP HEADER: TITLE, BRAND STATUS & REFRESH
          ========================================================================= */}

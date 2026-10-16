@@ -774,7 +774,7 @@ export default function ManufacturingPortalPage() {
               </span>
             </div>
           ) : (
-            <div className="space-y-3.5 max-w-6xl mx-auto">
+            <div className="space-y-3.5 w-full">
               {consolidatedGroups.map((group) => {
                 const isExpanded = expandedProducts.has(group.productId);
                 const hasPendingInGroup = group.items.some(
@@ -1120,7 +1120,7 @@ export default function ManufacturingPortalPage() {
               </span>
             </div>
           ) : (
-            <div className="space-y-4 max-w-6xl mx-auto">
+            <div className="space-y-4 w-full">
               {relevantOrders.map((order) => {
                 // Filter items for selected manufacturing unit
                 const assignedItems = order.items.filter((item) => {

@@ -21,6 +21,8 @@ import {
   UserCheck,
   Wallet,
   CalendarCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 export interface NavItem {
@@ -143,10 +145,23 @@ export const SIDEBAR_ITEMS: NavItem[] = [
 interface SidebarProps {
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-export default function Sidebar({ isMobileOpen, onCloseMobile }: SidebarProps) {
+export default function Sidebar({
+  isMobileOpen,
+  onCloseMobile,
+  isCollapsed = false,
+  onToggleCollapse,
+}: SidebarProps) {
   const pathname = usePathname();
+  const [hoveredItem, setHoveredItem] = React.useState<{
+    name: string;
+    category?: string;
+    top: number;
+    left: number;
+  } | null>(null);
 
   const isItemActive = (item: NavItem) => {
     if (pathname === item.href) return true;
@@ -167,15 +182,53 @@ export default function Sidebar({ isMobileOpen, onCloseMobile }: SidebarProps) {
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed md:sticky top-14 z-40 h-[calc(100vh-3.5rem)] w-64 lg:w-72 flex flex-col shrink-0 border-r transition-transform duration-200 ease-in-out md:translate-x-0 overflow-y-auto ${
-          isMobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed md:sticky top-14 z-40 h-[calc(100vh-3.5rem)] flex flex-col shrink-0 border-r transition-[width,transform] duration-200 ease-in-out md:translate-x-0 ${
+          isCollapsed ? "w-16" : "w-56 lg:w-60"
+        } ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}`}
         style={{
           backgroundColor: "var(--color-bg-sidebar)",
           borderColor: "var(--color-border-base)",
         }}
       >
-        <div className="flex flex-col py-3 px-2.5 space-y-1">
+        {/* Top Sidebar Collapse Toggle Bar */}
+        <div
+          className="flex items-center justify-between px-3 py-2 border-b shrink-0 min-h-[38px]"
+          style={{ borderColor: "var(--color-border-subtle)" }}
+        >
+          {!isCollapsed ? (
+            <>
+              <span className="text-[11px] font-medium tracking-wider uppercase text-slate-400">
+                Menu
+              </span>
+              {onToggleCollapse && (
+                <button
+                  type="button"
+                  onClick={onToggleCollapse}
+                  title="Collapse sidebar"
+                  aria-label="Collapse sidebar"
+                  className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                >
+                  <PanelLeftClose size={15} />
+                </button>
+              )}
+            </>
+          ) : (
+            onToggleCollapse && (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                title="Expand sidebar"
+                aria-label="Expand sidebar"
+                className="mx-auto p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+              >
+                <PanelLeftOpen size={15} />
+              </button>
+            )
+          )}
+        </div>
+
+        {/* Navigation List */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col py-2 px-2 space-y-0.5">
           {SIDEBAR_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isItemActive(item);
@@ -185,7 +238,21 @@ export default function Sidebar({ isMobileOpen, onCloseMobile }: SidebarProps) {
                 key={item.name}
                 href={item.href}
                 onClick={onCloseMobile}
-                className="group flex items-center justify-between px-3 py-2.5 rounded-md text-[13.5px] transition-colors duration-150 relative"
+                onMouseEnter={(e) => {
+                  if (isCollapsed) {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setHoveredItem({
+                      name: item.name,
+                      category: item.category,
+                      top: rect.top + rect.height / 2,
+                      left: rect.right + 10,
+                    });
+                  }
+                }}
+                onMouseLeave={() => setHoveredItem(null)}
+                className={`group relative flex items-center ${
+                  isCollapsed ? "justify-center p-2.5" : "justify-between px-3 py-2"
+                } rounded-md text-[13px] transition-colors duration-150`}
                 style={{
                   backgroundColor: active
                     ? "var(--color-bg-active)"
@@ -197,10 +264,14 @@ export default function Sidebar({ isMobileOpen, onCloseMobile }: SidebarProps) {
                   border: active
                     ? "1px solid var(--color-border-base)"
                     : "1px solid transparent",
-                    margin: 0
+                  margin: 0,
                 }}
               >
-                <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={`flex items-center ${
+                    isCollapsed ? "justify-center" : "gap-2.5"
+                  } min-w-0`}
+                >
                   <Icon
                     size={17}
                     className="shrink-0 transition-colors"
@@ -210,12 +281,22 @@ export default function Sidebar({ isMobileOpen, onCloseMobile }: SidebarProps) {
                         : "var(--color-text-muted)",
                     }}
                   />
-                  <span className="truncate tracking-tight">{item.name}</span>
+                  {!isCollapsed && (
+                    <span className="truncate tracking-tight">{item.name}</span>
+                  )}
                 </div>
 
-                {active && (
+                {!isCollapsed && active && (
                   <div
                     className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: "var(--color-brand-primary)" }}
+                  />
+                )}
+
+                {/* Active Indicator bar when collapsed */}
+                {isCollapsed && active && (
+                  <div
+                    className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r"
                     style={{ backgroundColor: "var(--color-brand-primary)" }}
                   />
                 )}
@@ -225,34 +306,68 @@ export default function Sidebar({ isMobileOpen, onCloseMobile }: SidebarProps) {
         </div>
 
         {/* Footer info in sidebar */}
+        {!isCollapsed ? (
+          <div
+            className="mt-auto p-2.5 m-2 rounded-lg border text-[11px] shrink-0"
+            style={{
+              backgroundColor: "var(--color-bg-subtle)",
+              borderColor: "var(--color-border-subtle)",
+              color: "var(--color-text-muted)",
+            }}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] tracking-wider uppercase">System</span>
+              <span
+                className="text-[10px] px-1 py-0.2 rounded font-medium"
+                style={{
+                  backgroundColor: "var(--color-brand-primary-light)",
+                  color: "var(--color-brand-primary-text)",
+                }}
+              >
+                v1.0.0
+              </span>
+            </div>
+            <div
+              className="truncate font-normal"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              Ravi Sweets Live Console
+            </div>
+          </div>
+        ) : (
+          <div
+            className="mt-auto p-2.5 mb-2 flex justify-center text-[10px] text-slate-400 shrink-0"
+            title="Ravi Sweets v1.0.0 (Live)"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          </div>
+        )}
+      </aside>
+
+      {/* Floating Popover Tooltip when Sidebar is Collapsed */}
+      {isCollapsed && hoveredItem && (
         <div
-          className="mt-auto p-3 m-2 rounded-lg border text-[11px]"
+          className="fixed z-50 pointer-events-none px-3 py-1.5 rounded-md bg-slate-900 text-white shadow-2xl whitespace-nowrap flex items-center animate-in fade-in zoom-in-95 duration-100"
           style={{
-            backgroundColor: "var(--color-bg-subtle)",
-            borderColor: "var(--color-border-subtle)",
-            color: "var(--color-text-muted)",
+            top: `${hoveredItem.top}px`,
+            left: `${hoveredItem.left}px`,
+            transform: "translateY(-50%)",
           }}
         >
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] tracking-wider uppercase">System</span>
-            <span
-              className="text-[10px] px-1 py-0.2 rounded"
-              style={{
-                backgroundColor: "var(--color-brand-primary-light)",
-                color: "var(--color-brand-primary-text)",
-              }}
-            >
-              v1.0.0
+          <div className="flex flex-col">
+            <span className="font-medium text-[12.5px] leading-snug">
+              {hoveredItem.name}
             </span>
+            {hoveredItem.category && (
+              <span className="text-[10px] text-slate-400 font-normal leading-tight">
+                {hoveredItem.category}
+              </span>
+            )}
           </div>
-          <div
-            className="truncate font-normal"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            Ravi Sweets Live Console
-          </div>
+          {/* Tooltip pointer triangle */}
+          <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-900" />
         </div>
-      </aside>
+      )}
     </>
   );
 }

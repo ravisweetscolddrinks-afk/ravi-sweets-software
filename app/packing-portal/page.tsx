@@ -806,7 +806,7 @@ export default function PackingPortalPage() {
               </span>
             </div>
           ) : (
-            <div className="space-y-3.5 max-w-6xl mx-auto">
+            <div className="space-y-3.5 w-full">
               {consolidatedGroups.map((group) => {
                 const isExpanded = expandedProducts.has(group.productId);
                 const hasIncoming = group.items.some(
@@ -1201,7 +1201,7 @@ export default function PackingPortalPage() {
               </span>
             </div>
           ) : (
-            <div className="space-y-4 max-w-6xl mx-auto">
+            <div className="space-y-4 w-full">
               {relevantOrders.map((order) => {
                 // Filter items for selected packing unit
                 const assignedItems = order.items.filter((item) => {
