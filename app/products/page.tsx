@@ -21,6 +21,8 @@ import OffcanvasDrawer from "@/components/OffcanvasDrawer";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import ViewDetailsModal from "@/components/ViewDetailsModal";
 import SearchableSelect from "@/components/SearchableSelect";
+import * as XLSX from "xlsx";
+import { SAMPLE_80_PRODUCTS } from "./sampleProductsData";
 import {
   Plus,
   Search,
@@ -42,6 +44,10 @@ import {
   Barcode,
   FolderTree,
   ExternalLink,
+  Download,
+  CheckCircle2,
+  AlertCircle,
+  FileUp,
 } from "lucide-react";
 
 export interface ProductItem {
@@ -64,6 +70,25 @@ export interface ProductItem {
   isFavourite?: boolean;
   showInWorksheet?: boolean;
   createdAt?: any;
+}
+
+export interface ParsedProductRow {
+  name: string;
+  categoryName: string;
+  barcode: string;
+  shortCode: string;
+  unit: "piece" | "KG" | "litre";
+  amount: number;
+  manufacturingUnitName: string;
+  packingUnitName: string;
+  imageUrl: string;
+  costPerPiece: number | "";
+  piecesPerKg: number | "";
+  kgPerTray: number | "";
+  isFavourite: boolean;
+  showInWorksheet: boolean;
+  isValid: boolean;
+  validationError: string;
 }
 
 interface DropdownItem {
@@ -102,6 +127,21 @@ export default function ProductsPage() {
   const [viewingProduct, setViewingProduct] = useState<ProductItem | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<ProductItem | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Bulk Upload Modal State
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState<boolean>(false);
+  const [isBulkUploading, setIsBulkUploading] = useState<boolean>(false);
+  const [bulkFileName, setBulkFileName] = useState<string>("");
+  const [parsedProducts, setParsedProducts] = useState<ParsedProductRow[]>([]);
+  const [bulkProgress, setBulkProgress] = useState<{
+    current: number;
+    total: number;
+    currentName: string;
+  }>({
+    current: 0,
+    total: 0,
+    currentName: "",
+  });
 
   // Form fields - NO preselected default values
   const [formData, setFormData] = useState({
@@ -500,6 +540,326 @@ export default function ProductsPage() {
     return "Recently";
   };
 
+  // Download Sample Excel Template (80 Realistic Products)
+  const handleDownloadSampleExcel = () => {
+    try {
+      const worksheet = XLSX.utils.json_to_sheet(SAMPLE_80_PRODUCTS);
+      worksheet["!cols"] = [
+        { wch: 34 }, // Product Name
+        { wch: 22 }, // Category Name
+        { wch: 14 }, // Barcode
+        { wch: 14 }, // Short Code
+        { wch: 22 }, // Unit
+        { wch: 24 }, // Selling Price / Amount
+        { wch: 26 }, // Manufacturing Unit Name
+        { wch: 24 }, // Packing Unit Name
+        { wch: 20 }, // Image URL
+        { wch: 16 }, // Cost Per Piece
+        { wch: 16 }, // Pieces Per KG
+        { wch: 14 }, // KG Per Tray
+        { wch: 20 }, // Is Favourite
+        { wch: 24 }, // Show in Worksheet
+      ];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Products Template");
+      XLSX.writeFile(workbook, "Ravi_Sweets_Products_Template.xlsx");
+      showToast("Downloaded sample Excel template with 80 products!", "success");
+    } catch (err: any) {
+      console.error("Error creating template:", err);
+      showToast("Could not generate Excel template: " + err.message, "error");
+    }
+  };
+
+  // Handle Excel/CSV file selection and parsing
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setBulkFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rawRows: any[] = XLSX.utils.sheet_to_json(ws);
+
+        if (!rawRows || rawRows.length === 0) {
+          showToast("The uploaded Excel file has no records", "error");
+          setParsedProducts([]);
+          return;
+        }
+
+        const parsed: ParsedProductRow[] = rawRows.map((row) => {
+          const getVal = (patterns: string[], exclude: string[] = []) => {
+            // Priority 1: Exact match on sanitized key
+            for (const key of Object.keys(row)) {
+              const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+              if (exclude.some((ex) => cleanKey.includes(ex))) continue;
+              for (const p of patterns) {
+                if (cleanKey === p) return String(row[key] ?? "").trim();
+              }
+            }
+            // Priority 2: Substring match
+            for (const key of Object.keys(row)) {
+              const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+              if (exclude.some((ex) => cleanKey.includes(ex))) continue;
+              for (const p of patterns) {
+                if (cleanKey.includes(p)) return String(row[key] ?? "").trim();
+              }
+            }
+            return "";
+          };
+
+          const name = getVal(
+            ["productname", "name", "itemname", "item"],
+            ["short", "category", "unit", "mfg", "pack", "image"]
+          );
+          const categoryName = getVal(["categoryname", "category", "catname", "cat"]);
+          const barcode = getVal(
+            ["barcode", "barcodenumber", "code", "upc", "sku"],
+            ["short"]
+          );
+          const shortCode =
+            getVal(["shortcode", "short", "itemcode"], ["barcode"]) ||
+            barcode ||
+            (name ? name.slice(0, 4).toUpperCase() : "");
+
+          const rawUnit = getVal(["unit", "measurementunit", "uom"]);
+          let unit: "piece" | "KG" | "litre" = "KG";
+          if (
+            rawUnit.toLowerCase().includes("piece") ||
+            rawUnit.toLowerCase().includes("pc")
+          ) {
+            unit = "piece";
+          } else if (
+            rawUnit.toLowerCase().includes("litre") ||
+            rawUnit.toLowerCase().includes("ltr")
+          ) {
+            unit = "litre";
+          }
+
+          const rawAmount = getVal(
+            ["sellingprice", "amount", "price", "rate", "mrp"],
+            ["piece", "costperpiece", "mfg", "pack"]
+          );
+          const cleanAmountStr = rawAmount.replace(/[^0-9.]/g, "");
+          const amount = cleanAmountStr ? Number(cleanAmountStr) || 0 : 0;
+
+          const manufacturingUnitName =
+            getVal(["manufacturingunitname", "manufacturingunit", "mfgunit", "mfg"], ["pack"]) ||
+            "Main Kitchen Unit";
+          const packingUnitName =
+            getVal(["packingunitname", "packingunit", "packunit", "pack"], ["mfg"]) ||
+            "Sweet Box Pack";
+
+          const rawImg = getVal(["imageurl", "image", "photo", "pic", "img"]);
+          // User Requirement: "if no image use default image as product image"
+          const imageUrl = rawImg && rawImg.startsWith("http") ? rawImg : "/logo.png";
+
+          const rawCost = getVal(["costperpiece", "piececost"]);
+          const costPerPiece = rawCost !== "" && !isNaN(Number(rawCost)) ? Number(rawCost) : "";
+
+          const rawPcs = getVal(["piecesperkg", "pieceskg"]);
+          const piecesPerKg = rawPcs !== "" && !isNaN(Number(rawPcs)) ? Number(rawPcs) : "";
+
+          const rawTray = getVal(["kgpertray", "traykg"]);
+          const kgPerTray = rawTray !== "" && !isNaN(Number(rawTray)) ? Number(rawTray) : "";
+
+          const rawFav = getVal(["isfavourite", "favourite", "favorite"]);
+          const isFavourite =
+            rawFav.toLowerCase().includes("yes") ||
+            rawFav.toLowerCase().includes("true") ||
+            rawFav === "1";
+
+          const rawWs = getVal(["showinworksheet", "worksheet"]);
+          const showInWorksheet =
+            rawWs.toLowerCase().includes("yes") ||
+            rawWs.toLowerCase().includes("true") ||
+            rawWs === "1";
+
+          const isValid = !!(name && barcode && amount > 0);
+          let validationError = "";
+          if (!name) validationError = "Product Name required";
+          else if (!barcode) validationError = "Barcode required";
+          else if (amount <= 0) validationError = "Amount > 0 required";
+
+          return {
+            name,
+            categoryName: categoryName || "Sweets",
+            barcode,
+            shortCode,
+            unit,
+            amount,
+            manufacturingUnitName,
+            packingUnitName,
+            imageUrl,
+            costPerPiece,
+            piecesPerKg,
+            kgPerTray,
+            isFavourite,
+            showInWorksheet,
+            isValid,
+            validationError,
+          };
+        });
+
+        setParsedProducts(parsed);
+        const validCount = parsed.filter((r) => r.isValid).length;
+        showToast(`Loaded ${parsed.length} products (${validCount} valid)`, "info");
+      } catch (err: any) {
+        console.error("Excel parse error:", err);
+        showToast("Failed to parse file: " + err.message, "error");
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // Start Bulk Upload of Products to Firestore
+  const handleStartBulkUpload = async () => {
+    const validRows = parsedProducts.filter((r) => r.isValid);
+    if (validRows.length === 0) {
+      showToast("No valid product rows to import", "error");
+      return;
+    }
+
+    setIsBulkUploading(true);
+    setBulkProgress({ current: 0, total: validRows.length, currentName: "" });
+
+    // Local caching maps for categories, mfg units, and packing units to minimize Firestore writes
+    const catMap = new Map<string, { id: string; name: string }>();
+    categories.forEach((c) => catMap.set(c.name.toLowerCase().trim(), c));
+
+    const mfgMap = new Map<string, { id: string; name: string }>();
+    manufacturingUnits.forEach((m) => mfgMap.set(m.name.toLowerCase().trim(), m));
+
+    const packMap = new Map<string, { id: string; name: string }>();
+    packingUnits.forEach((p) => packMap.set(p.name.toLowerCase().trim(), p));
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < validRows.length; i++) {
+      const row = validRows[i];
+      setBulkProgress({
+        current: i + 1,
+        total: validRows.length,
+        currentName: row.name,
+      });
+
+      try {
+        // Resolve or create Category
+        const cKey = row.categoryName.toLowerCase().trim();
+        let catId = "";
+        let catName = row.categoryName.trim() || "Sweets";
+        if (catMap.has(cKey)) {
+          const matched = catMap.get(cKey)!;
+          catId = matched.id;
+          catName = matched.name;
+        } else {
+          try {
+            const catDoc = await addDoc(collection(db, "product_categories"), {
+              name: catName,
+              createdAt: serverTimestamp(),
+            });
+            catId = catDoc.id;
+            catMap.set(cKey, { id: catId, name: catName });
+          } catch (e) {
+            catId = categories[0]?.id || "";
+            catName = categories[0]?.name || "Sweets";
+          }
+        }
+
+        // Resolve or create Manufacturing Unit
+        const mKey = row.manufacturingUnitName.toLowerCase().trim();
+        let mfgId = "";
+        let mfgName = row.manufacturingUnitName.trim() || "Main Kitchen Unit";
+        if (mfgMap.has(mKey)) {
+          const matched = mfgMap.get(mKey)!;
+          mfgId = matched.id;
+          mfgName = matched.name;
+        } else {
+          try {
+            const mfgDoc = await addDoc(collection(db, "manufacturing_units"), {
+              name: mfgName,
+              createdAt: serverTimestamp(),
+            });
+            mfgId = mfgDoc.id;
+            mfgMap.set(mKey, { id: mfgId, name: mfgName });
+          } catch (e) {
+            mfgId = manufacturingUnits[0]?.id || "";
+            mfgName = manufacturingUnits[0]?.name || "Main Kitchen Unit";
+          }
+        }
+
+        // Resolve or create Packing Unit
+        const pKey = row.packingUnitName.toLowerCase().trim();
+        let packId = "";
+        let packName = row.packingUnitName.trim() || "Sweet Box Pack";
+        if (packMap.has(pKey)) {
+          const matched = packMap.get(pKey)!;
+          packId = matched.id;
+          packName = matched.name;
+        } else {
+          try {
+            const packDoc = await addDoc(collection(db, "packing_units"), {
+              name: packName,
+              createdAt: serverTimestamp(),
+            });
+            packId = packDoc.id;
+            packMap.set(pKey, { id: packId, name: packName });
+          } catch (e) {
+            packId = packingUnits[0]?.id || "";
+            packName = packingUnits[0]?.name || "Sweet Box Pack";
+          }
+        }
+
+        // Add to products collection
+        await addDoc(collection(db, "products"), {
+          name: row.name.trim(),
+          categoryId: catId,
+          categoryName: catName,
+          barcode: String(row.barcode).trim(),
+          shortCode: String(row.shortCode).trim(),
+          unit: row.unit,
+          amount: Number(row.amount),
+          manufacturingUnitId: mfgId,
+          manufacturingUnitName: mfgName,
+          packingUnitId: packId,
+          packingUnitName: packName,
+          imageUrl: row.imageUrl || "/logo.png",
+          costPerPiece: row.costPerPiece !== "" ? Number(row.costPerPiece) : "",
+          piecesPerKg: row.piecesPerKg !== "" ? Number(row.piecesPerKg) : "",
+          kgPerTray: row.kgPerTray !== "" ? Number(row.kgPerTray) : "",
+          isFavourite: !!row.isFavourite,
+          showInWorksheet: !!row.showInWorksheet,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        successCount++;
+      } catch (err: any) {
+        console.error(`Error importing row for ${row.name}:`, err);
+        failCount++;
+      }
+    }
+
+    setIsBulkUploading(false);
+    if (successCount > 0) {
+      showToast(
+        `Successfully imported ${successCount} products${failCount > 0 ? ` (${failCount} failed)` : ""}!`,
+        "success"
+      );
+      setIsBulkModalOpen(false);
+      setParsedProducts([]);
+      setBulkFileName("");
+      fetchProductsData();
+    } else {
+      showToast("Bulk upload failed. Please verify your file.", "error");
+    }
+  };
+
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
       {/* Top Header */}
@@ -543,7 +903,7 @@ export default function ProductsPage() {
           </p>
         </div>
 
-        {/* Actions: Refresh & Add Product Button */}
+        {/* Actions: Refresh, Bulk Upload & Add Product Button */}
         <div className="flex items-center gap-2.5">
           <button
             onClick={fetchProductsData}
@@ -556,6 +916,19 @@ export default function ProductsPage() {
             }}
           >
             <RotateCw size={15} className={isLoading ? "animate-spin" : ""} />
+          </button>
+
+          <button
+            onClick={() => {
+              setBulkFileName("");
+              setParsedProducts([]);
+              setIsBulkModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-md border font-normal cursor-pointer bg-white hover:bg-slate-50 transition-colors shadow-2xs border-slate-200 text-slate-700"
+            title="Bulk Upload Products via Excel"
+          >
+            <FileSpreadsheet size={14} className="text-emerald-600" />
+            <span>Bulk Upload</span>
           </button>
 
           <button
@@ -1480,6 +1853,241 @@ export default function ProductsPage() {
           { label: "CREATED ON", value: formatDate(viewingProduct?.createdAt) },
         ]}
       />
+
+      {/* =========================================================================
+          BULK UPLOAD PRODUCTS MODAL
+         ========================================================================= */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/60">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shrink-0">
+                  <FileSpreadsheet size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium text-slate-900">Bulk Upload Products</h3>
+                  <p className="text-[11px] text-slate-500">
+                    Import products spreadsheet. Sample with 80 sweet & snack items ready to download.
+                  </p>
+                </div>
+              </div>
+              <button
+                disabled={isBulkUploading}
+                onClick={() => {
+                  if (!isBulkUploading) setIsBulkModalOpen(false);
+                }}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600 cursor-pointer disabled:opacity-40"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              {/* Step 1: Download Sample Excel Template */}
+              <div className="p-4 rounded-xl border bg-slate-50/70 border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-medium text-slate-800 flex items-center gap-1.5">
+                    <Download size={14} className="text-emerald-600" />
+                    Step 1: Download Sample Template
+                  </span>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Pre-filled with 80 complete dummy records across Sweets, Hot Snacks & Beverages (Name, Category, Barcode, Short Code, Unit, Selling Price, Mfg/Packing units). If no image is provided, default brand logo is assigned automatically.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadSampleExcel}
+                  className="px-3 py-1.5 text-xs rounded-lg border bg-white text-emerald-700 hover:bg-emerald-50 border-emerald-200 shadow-2xs font-medium flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+                >
+                  <FileSpreadsheet size={13} />
+                  <span>Download Sample Excel (80 Products)</span>
+                </button>
+              </div>
+
+              {/* Step 2: Select File */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-800 flex items-center gap-1.5">
+                  <FileUp size={14} className="text-[#348bdd]" />
+                  Step 2: Choose Excel or CSV Spreadsheet
+                </label>
+                <div className="relative border-2 border-dashed rounded-xl p-5 border-slate-200 hover:border-[#348bdd] bg-slate-50/40 text-center transition-colors">
+                  <input
+                    type="file"
+                    accept=".xlsx, .xls, .csv"
+                    disabled={isBulkUploading}
+                    onChange={handleFileUpload}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                  />
+                  <div className="flex flex-col items-center justify-center gap-1.5">
+                    <div className="w-10 h-10 rounded-full bg-white shadow-2xs border border-slate-200 flex items-center justify-center text-slate-400">
+                      <Upload size={18} className="text-[#348bdd]" />
+                    </div>
+                    {bulkFileName ? (
+                      <div>
+                        <span className="text-xs font-medium text-slate-800 font-mono block">
+                          {bulkFileName}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Click to select a different file
+                        </span>
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="text-xs font-medium text-slate-700 block">
+                          Drag & drop products spreadsheet here, or{" "}
+                          <span className="text-[#348bdd] underline">browse</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Supports multiple rows with auto-detected columns
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3: Parsed Data Preview */}
+              {parsedProducts.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-800">
+                      Step 3: Preview Data ({parsedProducts.length} items found)
+                    </span>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                        ✓ {parsedProducts.filter((r) => r.isValid).length} Valid
+                      </span>
+                      {parsedProducts.filter((r) => !r.isValid).length > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-medium">
+                          ⚠ {parsedProducts.filter((r) => !r.isValid).length} Issues
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="border rounded-xl overflow-hidden border-slate-200/80 max-h-56 overflow-y-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium sticky top-0">
+                        <tr>
+                          <th className="py-2 px-3 text-[10px] uppercase tracking-wider">Status</th>
+                          <th className="py-2 px-2 text-[10px] uppercase tracking-wider w-10 text-center">Image</th>
+                          <th className="py-2 px-3 text-[10px] uppercase tracking-wider">Name</th>
+                          <th className="py-2 px-3 text-[10px] uppercase tracking-wider">Category</th>
+                          <th className="py-2 px-3 text-[10px] uppercase tracking-wider">Barcode</th>
+                          <th className="py-2 px-3 text-[10px] uppercase tracking-wider">Unit</th>
+                          <th className="py-2 px-3 text-[10px] uppercase tracking-wider text-right">Price</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {parsedProducts.map((row, idx) => (
+                          <tr key={idx} className={row.isValid ? "hover:bg-slate-50/50" : "bg-rose-50/30"}>
+                            <td className="py-2 px-3 whitespace-nowrap">
+                              {row.isValid ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                  <CheckCircle2 size={10} /> Valid
+                                </span>
+                              ) : (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200"
+                                  title={row.validationError}
+                                >
+                                  <AlertCircle size={10} /> {row.validationError}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <img
+                                src={row.imageUrl || "/logo.png"}
+                                alt={row.name}
+                                className="w-6 h-6 rounded object-contain border border-slate-200 mx-auto bg-white p-0.5 shadow-2xs"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = "/logo.png";
+                                }}
+                              />
+                            </td>
+                            <td className="py-2 px-3 font-medium text-slate-800">{row.name || "—"}</td>
+                            <td className="py-2 px-3 text-slate-500">{row.categoryName || "Sweets"}</td>
+                            <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{row.barcode || "—"}</td>
+                            <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{row.unit}</td>
+                            <td className="py-2 px-3 font-mono text-slate-800 text-right font-medium">
+                              ₹{row.amount}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Progress indicator during bulk upload */}
+              {isBulkUploading && (
+                <div className="p-4 rounded-xl border bg-sky-50/60 border-sky-200 space-y-2 animate-in fade-in">
+                  <div className="flex items-center justify-between text-xs text-sky-900 font-medium">
+                    <span className="flex items-center gap-2">
+                      <Loader2 size={14} className="animate-spin text-[#348bdd]" />
+                      Importing product: {bulkProgress.currentName}
+                    </span>
+                    <span className="font-mono">
+                      {bulkProgress.current} / {bulkProgress.total} (
+                      {Math.round((bulkProgress.current / Math.max(1, bulkProgress.total)) * 100)}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-sky-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-[#348bdd] h-full transition-all duration-300 rounded-full"
+                      style={{
+                        width: `${Math.round(
+                          (bulkProgress.current / Math.max(1, bulkProgress.total)) * 100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-sky-600">
+                    Resolving categories, manufacturing units, packing units, and saving products to inventory...
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isBulkUploading}
+                onClick={() => setIsBulkModalOpen(false)}
+                className="px-4 py-2 text-xs rounded-lg border bg-white text-slate-700 hover:bg-slate-50 font-medium cursor-pointer border-slate-200 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isBulkUploading || parsedProducts.filter((r) => r.isValid).length === 0}
+                onClick={handleStartBulkUpload}
+                className="px-5 py-2 text-xs rounded-lg text-white font-medium cursor-pointer shadow-sm flex items-center gap-2 disabled:opacity-40"
+                style={{ backgroundColor: "var(--color-brand-primary)" }}
+              >
+                {isBulkUploading ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Processing {bulkProgress.current}/{bulkProgress.total}...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet size={14} />
+                    <span>
+                      Import {parsedProducts.filter((r) => r.isValid).length} Products
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Custom Confirmation Modal for Delete */}
       <ConfirmationModal
