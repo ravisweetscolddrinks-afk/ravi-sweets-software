@@ -1301,66 +1301,66 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-49px)] w-full overflow-hidden bg-white">
-      {/* 1. Header Toolbar */}
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
+      {/* Top Header */}
       <div
-        className="px-6 py-3.5 border-b flex flex-wrap items-center justify-between gap-4 shrink-0 bg-white"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b"
         style={{ borderColor: "var(--color-border-subtle)" }}
       >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center border bg-slate-50"
-            style={{
-              borderColor: "var(--color-border-base)",
-              color: "var(--color-brand-primary)",
-            }}
-          >
-            <ShoppingCart size={19} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1
-                className="text-base tracking-tight text-[var(--color-text-primary)]"
-                style={{ fontWeight: 500 }}
-              >
-                Orders
-              </h1>
-              <span
-                className="px-2 py-0.5 text-[10px] rounded uppercase tracking-wider font-mono font-normal"
-                style={{
-                  backgroundColor: "var(--color-brand-primary-light)",
-                  color: "var(--color-brand-primary-text)",
-                  border: "1px solid var(--color-brand-primary-border)",
-                }}
-              >
-                SALES & ADVANCE BOOKING
-              </span>
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{
+                backgroundColor: "var(--color-brand-primary-light)",
+                color: "var(--color-brand-primary)",
+              }}
+            >
+              <ShoppingCart size={18} />
             </div>
-            <p className="text-xs text-[var(--color-text-tertiary)] mt-0.5">
-              Advance party bookings, delivery schedule, sweet manufacturing status, and invoice payments
-            </p>
+            <h1
+              className="text-2xl text-[var(--color-text-primary)] tracking-tight"
+              style={{ fontWeight: 500 }}
+            >
+              Orders
+            </h1>
+            <span
+              className="px-2 py-0.5 text-xs rounded font-normal font-mono"
+              style={{
+                backgroundColor: "var(--color-bg-subtle)",
+                border: "1px solid var(--color-border-base)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              {totalCount} total
+            </span>
           </div>
+          <p
+            className="text-xs mt-1"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            Advance party bookings, sweet manufacturing workflows, delivery schedules, and tax invoicing.
+          </p>
         </div>
 
-        {/* Header Right Actions */}
+        {/* Actions: Refresh & Add Order Button */}
         <div className="flex items-center gap-2.5">
           <button
             onClick={fetchOrdersData}
+            title="Refresh list"
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border hover:bg-slate-50 transition-colors disabled:opacity-50 cursor-pointer shadow-2xs"
+            className="p-2 rounded-md border bg-white hover:bg-slate-50 transition-colors disabled:opacity-50 cursor-pointer"
             style={{
               borderColor: "var(--color-border-base)",
               color: "var(--color-text-secondary)",
             }}
-            title="Reload from Firestore"
           >
-            <RotateCw size={13} className={isLoading ? "animate-spin" : ""} />
-            <span>Refresh</span>
+            <RotateCw size={15} className={isLoading ? "animate-spin" : ""} />
           </button>
 
           <button
             onClick={handleOpenCreateModal}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs rounded-md text-white transition-opacity hover:opacity-90 font-normal shadow-xs cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs rounded-md text-white transition-opacity hover:opacity-90 font-normal shadow-xs cursor-pointer"
             style={{ backgroundColor: "var(--color-brand-primary)" }}
           >
             <Plus size={15} />
@@ -1369,21 +1369,17 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* 2. Controls & Date Filter Toolbar */}
-      <div
-        className="px-6 py-2.5 border-b bg-slate-50/60 flex flex-wrap items-center justify-between gap-3 shrink-0"
-        style={{ borderColor: "var(--color-border-subtle)" }}
-      >
-        {/* Left: Search Bar & Count */}
-        <div className="flex items-center gap-3">
+      {/* Search and Date Filter Toolbar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {/* Search Box */}
           <div
-            className="flex items-center gap-2 px-2.5 py-1 rounded-md border bg-white focus-within:ring-1 focus-within:ring-[var(--color-brand-primary)]"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md border w-full sm:w-72 bg-white"
             style={{
               borderColor: "var(--color-border-base)",
-              width: "240px",
             }}
           >
-            <Search size={13} className="text-slate-400 shrink-0" />
+            <Search size={14} style={{ color: "var(--color-text-muted)" }} />
             <input
               type="text"
               placeholder="Search order #, customer, store..."
@@ -1406,8 +1402,8 @@ export default function OrdersPage() {
                 { id: "this_week", label: "This Week" },
                 { id: "last_week", label: "Last Week" },
                 { id: "this_month", label: "This Month" },
-                { id: "last_month", label: "Last Month" },
-                { id: "custom", label: "Custom Dates" },
+                { id: "all", label: "All Time" },
+                { id: "custom", label: "Custom" },
               ] as { id: DateFilterType; label: string }[]
             ).map((filter) => (
               <button
@@ -1428,14 +1424,14 @@ export default function OrdersPage() {
             ))}
           </div>
 
-          {/* Custom Date Pickers (only shown when custom is selected) */}
+          {/* Custom Date Pickers */}
           {dateFilter === "custom" && (
             <div className="flex items-center gap-1.5 text-xs">
               <input
                 type="date"
                 value={customStartDate}
                 onChange={(e) => setCustomStartDate(e.target.value)}
-                className="px-2 py-0.5 border rounded text-xs bg-white text-slate-700"
+                className="px-2 py-1 border rounded-md text-xs bg-white text-slate-700"
                 style={{ borderColor: "var(--color-border-base)" }}
               />
               <span className="text-slate-400">to</span>
@@ -1443,66 +1439,73 @@ export default function OrdersPage() {
                 type="date"
                 value={customEndDate}
                 onChange={(e) => setCustomEndDate(e.target.value)}
-                className="px-2 py-0.5 border rounded text-xs bg-white text-slate-700"
+                className="px-2 py-1 border rounded-md text-xs bg-white text-slate-700"
                 style={{ borderColor: "var(--color-border-base)" }}
               />
             </div>
           )}
-
-          <div className="text-xs font-mono text-[var(--color-text-tertiary)] flex items-center gap-1 pl-1">
-            <span>Total Orders:</span>
-            <span className="font-semibold text-[var(--color-text-primary)]">
-              {totalCount}
-            </span>
-          </div>
         </div>
 
-        {/* Right: Pagination Controls */}
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-[var(--color-text-tertiary)] text-[11px] font-mono">
-            Page {currentPage} of {totalPages}
-          </span>
-          <div className="flex items-center border rounded-md overflow-hidden bg-white" style={{ borderColor: "var(--color-border-base)" }}>
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="p-1 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer border-r"
-              style={{ borderColor: "var(--color-border-base)" }}
-              title="Previous page"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="p-1 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
-              title="Next page"
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
+        <div
+          className="text-xs self-end sm:self-center font-normal"
+          style={{ color: "var(--color-text-muted)" }}
+        >
+          Showing {paginatedOrders.length} of {filteredOrders.length} (Limit: 24/page)
         </div>
       </div>
 
-      {/* 3. Orders Table View (Supabase Sheet Grid) */}
-      <div className="flex-1 overflow-auto bg-white">
+      {/* Main Table / Grid List (Supabase Table Editor Grid Style) */}
+      <div
+        className="rounded-lg border bg-white overflow-hidden shadow-xs"
+        style={{ borderColor: "var(--color-border-base)" }}
+      >
         {isLoading && orders.length === 0 ? (
-          <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400">
-            <Loader2 size={24} className="animate-spin text-[#348bdd]" />
-            <span className="text-xs font-mono">Loading orders from database...</span>
-          </div>
-        ) : filteredOrders.length === 0 ? (
-          <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400">
-            <ShoppingCart size={28} className="text-slate-300 stroke-[1.5]" />
-            <span className="text-xs font-medium text-slate-600">No orders found</span>
-            <span className="text-[11px] text-slate-400">
-              {searchQuery
-                ? "No orders match your search keyword"
-                : `No orders placed for ${dateFilter.replace("_", " ")}. Click 'Add Order' to create one.`}
+          <div className="py-20 flex flex-col items-center justify-center gap-3">
+            <Loader2
+              size={24}
+              className="animate-spin"
+              style={{ color: "var(--color-brand-primary)" }}
+            />
+            <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+              Loading orders from database...
             </span>
           </div>
+        ) : filteredOrders.length === 0 ? (
+          <div className="py-20 flex flex-col items-center justify-center text-center p-6">
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+              style={{
+                backgroundColor: "var(--color-bg-subtle)",
+                color: "var(--color-text-muted)",
+              }}
+            >
+              <ShoppingCart size={22} />
+            </div>
+            <h3
+              className="text-sm text-[var(--color-text-primary)]"
+              style={{ fontWeight: 500 }}
+            >
+              No orders found
+            </h3>
+            <p className="text-xs mt-1 max-w-sm" style={{ color: "var(--color-text-muted)" }}>
+              {searchQuery
+                ? "No orders match your search keyword or selected date range."
+                : `No orders found for the selected period. Click 'Add Order' to create an order.`}
+            </p>
+            {!searchQuery && (
+              <button
+                onClick={handleOpenCreateModal}
+                className="mt-4 flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md text-white font-normal cursor-pointer"
+                style={{ backgroundColor: "var(--color-brand-primary)" }}
+              >
+                <Plus size={14} />
+                <span>Add Order Now</span>
+              </button>
+            )}
+          </div>
         ) : (
-          <table className="w-full text-left text-xs border-collapse">
+          <div className="overflow-x-auto border-t" style={{ borderColor: "var(--color-border-base)" }}>
+            <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr
                 className="border-b divide-x divide-slate-200 text-[11px] text-slate-700 select-none sticky top-0 z-10"
@@ -1771,6 +1774,39 @@ export default function OrdersPage() {
               })}
             </tbody>
           </table>
+          </div>
+        )}
+
+        {/* Pagination Bar */}
+        {!isLoading && filteredOrders.length > 0 && (
+          <div
+            className="flex items-center justify-between px-4 py-3 border-t bg-white"
+            style={{ borderColor: "var(--color-border-base)" }}
+          >
+            <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+              Page {currentPage} of {totalPages}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="p-1.5 rounded border hover:bg-slate-50 transition-colors disabled:opacity-40 cursor-pointer"
+                style={{ borderColor: "var(--color-border-base)" }}
+              >
+                <ChevronLeft size={15} />
+              </button>
+
+              <button
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="p-1.5 rounded border hover:bg-slate-50 transition-colors disabled:opacity-40 cursor-pointer"
+                style={{ borderColor: "var(--color-border-base)" }}
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
         )}
       </div>
 

@@ -330,66 +330,66 @@ export default function CustomersPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-49px)] w-full overflow-hidden bg-white">
-      {/* 1. Header Toolbar */}
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
+      {/* Top Header */}
       <div
-        className="px-6 py-3.5 border-b flex flex-wrap items-center justify-between gap-4 shrink-0 bg-white"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b"
         style={{ borderColor: "var(--color-border-subtle)" }}
       >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center border bg-slate-50"
-            style={{
-              borderColor: "var(--color-border-base)",
-              color: "var(--color-brand-primary)",
-            }}
-          >
-            <Users size={19} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1
-                className="text-base tracking-tight text-[var(--color-text-primary)]"
-                style={{ fontWeight: 500 }}
-              >
-                Customers
-              </h1>
-              <span
-                className="px-2 py-0.5 text-[10px] rounded uppercase tracking-wider font-mono font-normal"
-                style={{
-                  backgroundColor: "var(--color-brand-primary-light)",
-                  color: "var(--color-brand-primary-text)",
-                  border: "1px solid var(--color-brand-primary-border)",
-                }}
-              >
-                CRM DIRECTORY
-              </span>
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{
+                backgroundColor: "var(--color-brand-primary-light)",
+                color: "var(--color-brand-primary)",
+              }}
+            >
+              <Users size={18} />
             </div>
-            <p className="text-xs text-[var(--color-text-tertiary)] mt-0.5">
-              Customer accounts, mobile contacts, billing addresses, and relationship directory
-            </p>
+            <h1
+              className="text-2xl text-[var(--color-text-primary)] tracking-tight"
+              style={{ fontWeight: 500 }}
+            >
+              Customers
+            </h1>
+            <span
+              className="px-2 py-0.5 text-xs rounded font-normal font-mono"
+              style={{
+                backgroundColor: "var(--color-bg-subtle)",
+                border: "1px solid var(--color-border-base)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              {totalCount} total
+            </span>
           </div>
+          <p
+            className="text-xs mt-1"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            Customer accounts, mobile contacts, billing addresses, and B2B GST tax profiles.
+          </p>
         </div>
 
-        {/* Action Buttons */}
+        {/* Actions: Refresh & Add Customer Button */}
         <div className="flex items-center gap-2.5">
           <button
             onClick={fetchCustomersData}
+            title="Refresh list"
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border hover:bg-slate-50 transition-colors disabled:opacity-50 cursor-pointer shadow-2xs"
+            className="p-2 rounded-md border bg-white hover:bg-slate-50 transition-colors disabled:opacity-50 cursor-pointer"
             style={{
               borderColor: "var(--color-border-base)",
               color: "var(--color-text-secondary)",
             }}
-            title="Reload from Firestore"
           >
-            <RotateCw size={13} className={isLoading ? "animate-spin" : ""} />
-            <span>Refresh</span>
+            <RotateCw size={15} className={isLoading ? "animate-spin" : ""} />
           </button>
 
           <button
             onClick={handleOpenAdd}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs rounded-md text-white transition-opacity hover:opacity-90 font-normal shadow-xs cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs rounded-md text-white transition-opacity hover:opacity-90 font-normal shadow-xs cursor-pointer"
             style={{ backgroundColor: "var(--color-brand-primary)" }}
           >
             <Plus size={15} />
@@ -398,87 +398,87 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* 2. Supabase Table Editor Controls */}
-      <div
-        className="px-6 py-2.5 border-b bg-slate-50/60 flex flex-wrap items-center justify-between gap-3 shrink-0"
-        style={{ borderColor: "var(--color-border-subtle)" }}
-      >
-        {/* Search Input */}
-        <div className="flex items-center gap-3">
-          <div
-            className="flex items-center gap-2 px-2.5 py-1 rounded-md border bg-white focus-within:ring-1 focus-within:ring-[var(--color-brand-primary)]"
-            style={{
-              borderColor: "var(--color-border-base)",
-              width: "260px",
+      {/* Search and Filters Toolbar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md border w-full sm:w-80 bg-white"
+          style={{
+            borderColor: "var(--color-border-base)",
+          }}
+        >
+          <Search size={14} style={{ color: "var(--color-text-muted)" }} />
+          <input
+            type="text"
+            placeholder="Search by name, phone, city, GST..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
             }}
-          >
-            <Search size={13} className="text-slate-400 shrink-0" />
-            <input
-              type="text"
-              placeholder="Search by name, phone, city..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full text-xs bg-transparent focus:outline-none"
-              style={{ color: "var(--color-text-primary)" }}
-            />
-          </div>
-
-          <div
-            className="text-xs font-mono text-[var(--color-text-tertiary)] flex items-center gap-1"
-          >
-            <span>Total Records:</span>
-            <span className="font-semibold text-[var(--color-text-primary)]">
-              {totalCount}
-            </span>
-          </div>
+            className="w-full text-xs bg-transparent focus:outline-none"
+            style={{ color: "var(--color-text-primary)" }}
+          />
         </div>
 
-        {/* Pagination controls */}
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-[var(--color-text-tertiary)] text-[11px] font-mono">
-            Page {currentPage} of {totalPages}
-          </span>
-          <div className="flex items-center border rounded-md overflow-hidden bg-white" style={{ borderColor: "var(--color-border-base)" }}>
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="p-1 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer border-r"
-              style={{ borderColor: "var(--color-border-base)" }}
-              title="Previous page"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="p-1 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
-              title="Next page"
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
+        <div
+          className="text-xs self-end sm:self-center"
+          style={{ color: "var(--color-text-muted)" }}
+        >
+          Showing {paginatedCustomers.length} of {filteredCustomers.length} (Limit: 24/page)
         </div>
       </div>
 
-      {/* 3. Table Editor View (Supabase Sheet Grid) */}
-      <div className="flex-1 overflow-auto bg-white">
+      {/* Main Table / Grid List (Supabase Table Editor Grid Style) */}
+      <div
+        className="rounded-lg border bg-white overflow-hidden shadow-xs"
+        style={{ borderColor: "var(--color-border-base)" }}
+      >
         {isLoading && customers.length === 0 ? (
-          <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400">
-            <Loader2 size={24} className="animate-spin text-[#348bdd]" />
-            <span className="text-xs font-mono">Loading customers from database...</span>
-          </div>
-        ) : filteredCustomers.length === 0 ? (
-          <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400">
-            <Users size={28} className="text-slate-300 stroke-[1.5]" />
-            <span className="text-xs font-medium text-slate-600">No customer records found</span>
-            <span className="text-[11px] text-slate-400">
-              {searchQuery ? "Try refining your search keyword" : "Click 'Add Customer' above to create your first client profile"}
+          <div className="py-20 flex flex-col items-center justify-center gap-3">
+            <Loader2
+              size={24}
+              className="animate-spin"
+              style={{ color: "var(--color-brand-primary)" }}
+            />
+            <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+              Loading customers from database...
             </span>
           </div>
+        ) : filteredCustomers.length === 0 ? (
+          <div className="py-20 flex flex-col items-center justify-center text-center p-6">
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+              style={{
+                backgroundColor: "var(--color-bg-subtle)",
+                color: "var(--color-text-muted)",
+              }}
+            >
+              <Users size={22} />
+            </div>
+            <h3
+              className="text-sm text-[var(--color-text-primary)]"
+              style={{ fontWeight: 500 }}
+            >
+              {searchQuery ? "No matching customers found" : "No customers added yet"}
+            </h3>
+            <p className="text-xs mt-1 max-w-sm" style={{ color: "var(--color-text-muted)" }}>
+              {searchQuery
+                ? "Try refining your search keyword or clearing the filter."
+                : "Get started by adding your first retail or wholesale customer."}
+            </p>
+            {!searchQuery && (
+              <button
+                onClick={handleOpenAdd}
+                className="mt-4 flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md text-white font-normal cursor-pointer"
+                style={{ backgroundColor: "var(--color-brand-primary)" }}
+              >
+                <Plus size={14} />
+                <span>Add Customer Now</span>
+              </button>
+            )}
+          </div>
         ) : (
+          <div className="overflow-x-auto border-t" style={{ borderColor: "var(--color-border-base)" }}>
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr
@@ -732,6 +732,39 @@ export default function CustomersPage() {
               })}
             </tbody>
           </table>
+          </div>
+        )}
+
+        {/* Pagination Bar */}
+        {!isLoading && filteredCustomers.length > 0 && (
+          <div
+            className="flex items-center justify-between px-4 py-3 border-t bg-white"
+            style={{ borderColor: "var(--color-border-base)" }}
+          >
+            <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+              Page {currentPage} of {totalPages}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="p-1.5 rounded border hover:bg-slate-50 transition-colors disabled:opacity-40 cursor-pointer"
+                style={{ borderColor: "var(--color-border-base)" }}
+              >
+                <ChevronLeft size={15} />
+              </button>
+
+              <button
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="p-1.5 rounded border hover:bg-slate-50 transition-colors disabled:opacity-40 cursor-pointer"
+                style={{ borderColor: "var(--color-border-base)" }}
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
         )}
       </div>
 

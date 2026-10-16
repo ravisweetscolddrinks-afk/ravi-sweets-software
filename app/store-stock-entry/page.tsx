@@ -558,43 +558,54 @@ export default function StoreStockEntryPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-49px)] w-full overflow-hidden bg-slate-50/50">
-      {/* 1. Header & Live Store Selector Bar */}
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
+      {/* Top Header */}
       <div
-        className="px-6 py-3 border-b bg-white flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-2xs"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b"
         style={{ borderColor: "var(--color-border-subtle)" }}
       >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center border bg-blue-50/80 text-[#348bdd] shadow-2xs"
-            style={{ borderColor: "var(--color-border-base)" }}
-          >
-            <ArrowDownToLine size={22} className="stroke-[1.8]" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1
-                className="text-base tracking-tight text-slate-900"
-                style={{ fontWeight: 500 }}
-              >
-                Store Stock Entry
-              </h1>
-              <span className="px-2 py-0.5 text-[10px] rounded bg-blue-50 text-[#348bdd] font-mono font-medium border border-blue-200 uppercase tracking-wide">
-                RETAIL OUTLET INVENTORY
-              </span>
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live Sync
-              </span>
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{
+                backgroundColor: "var(--color-brand-primary-light)",
+                color: "var(--color-brand-primary)",
+              }}
+            >
+              <ArrowDownToLine size={18} />
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Store-wise available stock: piece/tray/litre to KG conversion, inward receipts, and live POS deductions
-            </p>
+            <h1
+              className="text-2xl text-[var(--color-text-primary)] tracking-tight"
+              style={{ fontWeight: 500 }}
+            >
+              Store Stock Entry
+            </h1>
+            <span
+              className="px-2 py-0.5 text-xs rounded font-normal font-mono"
+              style={{
+                backgroundColor: "var(--color-bg-subtle)",
+                border: "1px solid var(--color-border-base)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              {stockRows.length} items
+            </span>
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live Sync
+            </span>
           </div>
+          <p
+            className="text-xs mt-1"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            Store-wise available stock: piece/tray/litre to KG conversion, inward receipts, and live POS deductions.
+          </p>
         </div>
 
         {/* Store Selector & Metrics */}
-        <div className="flex flex-wrap items-center gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-2.5 text-xs">
           {/* Outlet Selector Dropdown */}
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg p-1">
             <span className="text-[11px] font-medium text-slate-500 px-1 flex items-center gap-1">
@@ -618,7 +629,7 @@ export default function StoreStockEntryPage() {
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-blue-50/50 border-blue-200 text-blue-900 shadow-2xs">
             <Scale size={14} className="text-[#348bdd]" />
             <div className="flex flex-col">
-              <span className="text-[9px] text-blue-600 uppercase font-mono">Total Store Stock</span>
+              <span className="text-[9px] text-blue-600 uppercase font-mono">Total Stock</span>
               <span className="font-semibold text-xs font-mono">
                 {summaryMetrics.totalStockKg} KG
               </span>
@@ -637,11 +648,8 @@ export default function StoreStockEntryPage() {
         </div>
       </div>
 
-      {/* 2. Controls Toolbar: Category Tabs, Stock Status, Search Bar */}
-      <div
-        className="px-6 py-2.5 border-b bg-white flex flex-wrap items-center justify-between gap-3 shrink-0"
-        style={{ borderColor: "var(--color-border-subtle)" }}
-      >
+      {/* Search and Filters Toolbar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
         {/* Left: Category Filter Pills */}
         <div className="flex items-center gap-1 overflow-x-auto max-w-xl pb-0.5">
           <button
@@ -676,7 +684,7 @@ export default function StoreStockEntryPage() {
               type="button"
               disabled={isSavingAll}
               onClick={handleSaveAllEnteredStock}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#348bdd] hover:bg-[#277ecf] text-white text-xs font-medium transition-colors shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-[#348bdd] hover:bg-[#277ecf] text-white text-xs font-medium transition-colors shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
             >
               {isSavingAll ? (
                 <>
@@ -695,7 +703,7 @@ export default function StoreStockEntryPage() {
           <select
             value={stockStatusFilter}
             onChange={(e) => setStockStatusFilter(e.target.value as any)}
-            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-[#348bdd] cursor-pointer shadow-2xs"
+            className="bg-white border border-slate-200 rounded-md px-2.5 py-1 text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-[#348bdd] cursor-pointer shadow-2xs"
           >
             <option value="all">All Stock Statuses</option>
             <option value="in_stock">In Stock (&gt; 0)</option>
@@ -703,53 +711,120 @@ export default function StoreStockEntryPage() {
             <option value="out_of_stock">Out of Stock (0)</option>
           </select>
 
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-white shadow-2xs w-56 focus-within:ring-1 focus-within:ring-[#348bdd]">
-            <Search size={13} className="text-slate-400 shrink-0" />
+          <div
+            className="flex items-center gap-2 px-3 py-1 rounded-md border bg-white w-52"
+            style={{ borderColor: "var(--color-border-base)" }}
+          >
+            <Search size={13} style={{ color: "var(--color-text-muted)" }} />
             <input
               type="text"
-              placeholder="Search product, barcode..."
+              placeholder="Search product..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs bg-transparent focus:outline-none text-slate-800"
+              className="w-full text-xs bg-transparent focus:outline-none"
+              style={{ color: "var(--color-text-primary)" }}
             />
           </div>
         </div>
       </div>
 
-      {/* 3. Main Product Stock Table */}
-      <div className="flex-1 overflow-auto bg-white p-4 sm:p-6">
+      {/* Main Table / Grid List (Supabase Table Editor Grid Style) */}
+      <div
+        className="rounded-lg border bg-white overflow-hidden shadow-xs"
+        style={{ borderColor: "var(--color-border-base)" }}
+      >
         {isLoading ? (
-          <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400">
-            <Loader2 size={26} className="animate-spin text-[#348bdd]" />
-            <span className="text-xs font-mono">Loading store inventory...</span>
-          </div>
-        ) : stockRows.length === 0 ? (
-          <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400 bg-white rounded-xl border border-dashed border-slate-200 p-8">
-            <Boxes size={32} className="text-slate-300 stroke-[1.5]" />
-            <span className="text-sm font-medium text-slate-700">No Products Found</span>
-            <span className="text-xs text-slate-400">
-              No products match your current category or search filters.
+          <div className="py-20 flex flex-col items-center justify-center gap-3">
+            <Loader2
+              size={24}
+              className="animate-spin"
+              style={{ color: "var(--color-brand-primary)" }}
+            />
+            <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+              Loading store inventory...
             </span>
           </div>
+        ) : stockRows.length === 0 ? (
+          <div className="py-20 flex flex-col items-center justify-center text-center p-6">
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+              style={{
+                backgroundColor: "var(--color-bg-subtle)",
+                color: "var(--color-text-muted)",
+              }}
+            >
+              <Boxes size={22} />
+            </div>
+            <h3
+              className="text-sm text-[var(--color-text-primary)]"
+              style={{ fontWeight: 500 }}
+            >
+              No Products Found
+            </h3>
+            <p className="text-xs mt-1 max-w-sm" style={{ color: "var(--color-text-muted)" }}>
+              No products match your current category or search filters.
+            </p>
+          </div>
         ) : (
-          <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs bg-white">
+          <div className="overflow-x-auto border-t" style={{ borderColor: "var(--color-border-base)" }}>
             <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b divide-x divide-slate-200 bg-slate-50 text-[11px] text-slate-600 uppercase font-mono sticky top-0 z-10">
-                  <th className="py-2.5 px-3 min-w-[220px]">Product Name</th>
-                  <th className="py-2.5 px-3 min-w-[280px] bg-sky-50/50 text-[#1d5f9f]">
-                    Enter Stock (Qty & Unit)
+              <thead
+                className="border-b select-none sticky top-0 z-10"
+                style={{
+                  backgroundColor: "var(--color-bg-surface)",
+                  borderColor: "var(--color-border-base)",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                <tr className="divide-x divide-slate-200 text-[11px]">
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 min-w-[220px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">product_name</span>
+                      <span className="text-[10px] font-mono text-slate-400">text</span>
+                    </div>
                   </th>
-                  <th className="py-2.5 px-3 text-center min-w-[130px] bg-blue-50/25 text-[#348bdd]">
-                    Calculated Inflow (KG)
+                  <th className="px-3.5 py-2 font-medium bg-sky-50/50 text-[#1d5f9f] min-w-[280px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium">enter_stock</span>
+                      <span className="text-[10px] font-mono text-sky-600">qty &amp; unit</span>
+                    </div>
                   </th>
-                  <th className="py-2.5 px-3 text-right min-w-[140px]">
-                    Available Stock
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 text-center min-w-[130px]">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="font-medium text-slate-800">inflow_kg</span>
+                      <span className="text-[10px] font-mono text-slate-400">numeric</span>
+                    </div>
                   </th>
-                  <th className="py-2.5 px-3 min-w-[110px]">Category</th>
-                  <th className="py-2.5 px-3 text-center min-w-[140px]">Conversion Ratio</th>
-                  <th className="py-2.5 px-3 text-center min-w-[100px]">Status</th>
-                  <th className="py-2.5 px-3 text-center min-w-[70px]">Options</th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 text-right min-w-[140px]">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span className="font-medium text-slate-800">available_stock</span>
+                      <span className="text-[10px] font-mono text-slate-400">numeric</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 min-w-[110px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">category</span>
+                      <span className="text-[10px] font-mono text-slate-400">text</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 text-center min-w-[140px]">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="font-medium text-slate-800">conversion</span>
+                      <span className="text-[10px] font-mono text-slate-400">ratio</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 text-center min-w-[100px]">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="font-medium text-slate-800">status</span>
+                      <span className="text-[10px] font-mono text-slate-400">badge</span>
+                    </div>
+                  </th>
+                  <th className="px-3 py-2 font-medium text-center bg-slate-50/50 w-20">
+                    <div className="flex items-center justify-center gap-1">
+                      <span className="font-medium text-slate-800">adjust</span>
+                      <span className="text-[10px] font-mono text-slate-400">menu</span>
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">

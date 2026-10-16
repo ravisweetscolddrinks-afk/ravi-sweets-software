@@ -268,39 +268,50 @@ export default function WalkInSalesPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-49px)] w-full overflow-hidden bg-slate-50/50">
-      {/* 1. Header Toolbar */}
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
+      {/* Top Header */}
       <div
-        className="px-6 py-3 border-b bg-white flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-2xs"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b"
         style={{ borderColor: "var(--color-border-subtle)" }}
       >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center border bg-blue-50/80 text-[#348bdd] shadow-2xs"
-            style={{ borderColor: "var(--color-border-base)" }}
-          >
-            <ShoppingBag size={22} className="stroke-[1.8]" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1
-                className="text-base tracking-tight text-slate-900"
-                style={{ fontWeight: 500 }}
-              >
-                Walk In Sales
-              </h1>
-              <span className="px-2 py-0.5 text-[10px] rounded bg-blue-50 text-[#348bdd] font-mono font-medium border border-blue-200 uppercase">
-                SETTLED COUNTER BILLS
-              </span>
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live Sync
-              </span>
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{
+                backgroundColor: "var(--color-brand-primary-light)",
+                color: "var(--color-brand-primary)",
+              }}
+            >
+              <ShoppingBag size={18} />
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Chronological log of counter billing receipts, cashier tender summaries, and instant thermal reprints
-            </p>
+            <h1
+              className="text-2xl text-[var(--color-text-primary)] tracking-tight"
+              style={{ fontWeight: 500 }}
+            >
+              Walk In Sales
+            </h1>
+            <span
+              className="px-2 py-0.5 text-xs rounded font-normal font-mono"
+              style={{
+                backgroundColor: "var(--color-bg-subtle)",
+                border: "1px solid var(--color-border-base)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              {filteredSales.length} total
+            </span>
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live Sync
+            </span>
           </div>
+          <p
+            className="text-xs mt-1"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            Chronological counter billing receipts, cashier tender summaries, and instant thermal reprints.
+          </p>
         </div>
 
         {/* Revenue Metric Pills */}
@@ -308,7 +319,7 @@ export default function WalkInSalesPage() {
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-blue-50/50 border-blue-200 text-blue-900 shadow-2xs">
             <TrendingUp size={14} className="text-[#348bdd]" />
             <div className="flex flex-col">
-              <span className="text-[9px] text-blue-600 uppercase font-mono">Total Sales Volume</span>
+              <span className="text-[9px] text-blue-600 uppercase font-mono">Total Sales</span>
               <span className="font-semibold text-xs font-mono">
                 ₹{metrics.totalRevenue.toLocaleString()} ({metrics.billsCount} bills)
               </span>
@@ -318,7 +329,7 @@ export default function WalkInSalesPage() {
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-emerald-50/60 border-emerald-200 text-emerald-800 shadow-2xs">
             <Banknote size={14} className="text-emerald-600" />
             <div className="flex flex-col">
-              <span className="text-[9px] text-emerald-600 uppercase font-mono">Cash Collected</span>
+              <span className="text-[9px] text-emerald-600 uppercase font-mono">Cash</span>
               <span className="font-semibold text-xs font-mono">
                 ₹{metrics.cashTotal.toLocaleString()}
               </span>
@@ -328,7 +339,7 @@ export default function WalkInSalesPage() {
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-indigo-50/60 border-indigo-200 text-indigo-800 shadow-2xs">
             <Smartphone size={14} className="text-indigo-600" />
             <div className="flex flex-col">
-              <span className="text-[9px] text-indigo-600 uppercase font-mono">UPI / QR Collected</span>
+              <span className="text-[9px] text-indigo-600 uppercase font-mono">UPI / QR</span>
               <span className="font-semibold text-xs font-mono">
                 ₹{metrics.upiTotal.toLocaleString()}
               </span>
@@ -337,13 +348,10 @@ export default function WalkInSalesPage() {
         </div>
       </div>
 
-      {/* 2. Controls Toolbar: Store Selector, Date Filter, Payment Filter, Search */}
-      <div
-        className="px-6 py-2.5 border-b bg-white flex flex-wrap items-center justify-between gap-3 shrink-0"
-        style={{ borderColor: "var(--color-border-subtle)" }}
-      >
-        {/* Left: Store Selector & Date Pills */}
-        <div className="flex flex-wrap items-center gap-2.5">
+      {/* Search and Filters Toolbar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {/* Store Selector */}
           <div className="flex items-center gap-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg p-1">
             <Store size={13} className="text-[#348bdd] ml-1" />
             <select
@@ -387,10 +395,8 @@ export default function WalkInSalesPage() {
               </button>
             ))}
           </div>
-        </div>
 
-        {/* Right: Payment Mode Filter & Search Bar */}
-        <div className="flex items-center gap-2.5 text-xs">
+          {/* Payment Filter */}
           <select
             value={paymentFilter}
             onChange={(e) => {
@@ -406,8 +412,14 @@ export default function WalkInSalesPage() {
             <option value="Split">Split</option>
           </select>
 
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-white shadow-2xs w-56 focus-within:ring-1 focus-within:ring-[#348bdd]">
-            <Search size={13} className="text-slate-400 shrink-0" />
+          {/* Search Box */}
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md border w-full sm:w-60 bg-white"
+            style={{
+              borderColor: "var(--color-border-base)",
+            }}
+          >
+            <Search size={14} style={{ color: "var(--color-text-muted)" }} />
             <input
               type="text"
               placeholder="Search bill #, customer..."
@@ -416,65 +428,119 @@ export default function WalkInSalesPage() {
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full text-xs bg-transparent focus:outline-none text-slate-800"
+              className="w-full text-xs bg-transparent focus:outline-none"
+              style={{ color: "var(--color-text-primary)" }}
             />
           </div>
+        </div>
 
-          {/* Pagination Controls */}
-          <div className="flex items-center gap-1 font-mono text-[11px] text-slate-500 pl-1">
-            <span>
-              {currentPage} / {totalPages}
-            </span>
-            <div className="flex items-center border border-slate-200 rounded-md overflow-hidden bg-white shadow-2xs ml-1">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="p-1 hover:bg-slate-100 disabled:opacity-30 cursor-pointer border-r border-slate-200"
-              >
-                <ChevronLeft size={13} />
-              </button>
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="p-1 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
-              >
-                <ChevronRight size={13} />
-              </button>
-            </div>
-          </div>
+        <div
+          className="text-xs self-end sm:self-center font-normal"
+          style={{ color: "var(--color-text-muted)" }}
+        >
+          Showing {paginatedSales.length} of {filteredSales.length} (Limit: 24/page)
         </div>
       </div>
 
-      {/* 3. Main Bills Table View */}
-      <div className="flex-1 overflow-auto bg-white p-4 sm:p-6">
+      {/* Main Table / Grid List (Supabase Table Editor Grid Style) */}
+      <div
+        className="rounded-lg border bg-white overflow-hidden shadow-xs"
+        style={{ borderColor: "var(--color-border-base)" }}
+      >
         {isLoading ? (
-          <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400">
-            <Loader2 size={26} className="animate-spin text-[#348bdd]" />
-            <span className="text-xs font-mono">Loading counter sales records...</span>
-          </div>
-        ) : paginatedSales.length === 0 ? (
-          <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400 bg-white rounded-xl border border-dashed border-slate-200 p-8">
-            <ShoppingBag size={32} className="text-slate-300 stroke-[1.5]" />
-            <span className="text-sm font-medium text-slate-700">No Walk-In Bills Found</span>
-            <span className="text-xs text-slate-400">
-              No bills match your current filters. Settle bills in POS to see them appear live.
+          <div className="py-20 flex flex-col items-center justify-center gap-3">
+            <Loader2
+              size={24}
+              className="animate-spin"
+              style={{ color: "var(--color-brand-primary)" }}
+            />
+            <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+              Loading counter sales records...
             </span>
           </div>
+        ) : paginatedSales.length === 0 ? (
+          <div className="py-20 flex flex-col items-center justify-center text-center p-6">
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+              style={{
+                backgroundColor: "var(--color-bg-subtle)",
+                color: "var(--color-text-muted)",
+              }}
+            >
+              <ShoppingBag size={22} />
+            </div>
+            <h3
+              className="text-sm text-[var(--color-text-primary)]"
+              style={{ fontWeight: 500 }}
+            >
+              No Walk-In Bills Found
+            </h3>
+            <p className="text-xs mt-1 max-w-sm" style={{ color: "var(--color-text-muted)" }}>
+              {searchQuery
+                ? "No bills match your search keyword or selected store/date filters."
+                : "No counter sales settled yet for the selected period. Settle bills in POS to see them appear live."}
+            </p>
+          </div>
         ) : (
-          <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs bg-white">
+          <div className="overflow-x-auto border-t" style={{ borderColor: "var(--color-border-base)" }}>
             <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b divide-x divide-slate-200 bg-slate-50 text-[11px] text-slate-600 uppercase font-mono sticky top-0 z-10">
-                  <th className="py-2.5 px-3 min-w-[140px]">Bill Number</th>
-                  <th className="py-2.5 px-3 min-w-[140px]">Date & Time</th>
-                  <th className="py-2.5 px-3 min-w-[180px]">Customer</th>
-                  <th className="py-2.5 px-3 min-w-[140px]">Store Outlet</th>
-                  <th className="py-2.5 px-3 min-w-[200px]">Items Summary</th>
-                  <th className="py-2.5 px-3 text-center min-w-[110px]">Payment Mode</th>
-                  <th className="py-2.5 px-3 text-right min-w-[120px] bg-blue-50/50 text-[#348bdd]">
-                    Grand Total
+              <thead
+                className="border-b select-none sticky top-0 z-10"
+                style={{
+                  backgroundColor: "var(--color-bg-surface)",
+                  borderColor: "var(--color-border-base)",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                <tr className="divide-x divide-slate-200 text-[11px]">
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 min-w-[140px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">bill_number</span>
+                      <span className="text-[10px] font-mono text-slate-400">varchar</span>
+                    </div>
                   </th>
-                  <th className="py-2.5 px-3 text-right min-w-[110px]">Receipt</th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 min-w-[140px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">date_time</span>
+                      <span className="text-[10px] font-mono text-slate-400">timestamp</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 min-w-[180px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">customer</span>
+                      <span className="text-[10px] font-mono text-slate-400">entity</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 min-w-[140px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">store_outlet</span>
+                      <span className="text-[10px] font-mono text-slate-400">varchar</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 min-w-[200px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">items</span>
+                      <span className="text-[10px] font-mono text-slate-400">array</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 text-center min-w-[110px]">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="font-medium text-slate-800">payment_mode</span>
+                      <span className="text-[10px] font-mono text-slate-400">status</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 text-right min-w-[120px]">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span className="font-medium text-slate-800">grand_total</span>
+                      <span className="text-[10px] font-mono text-slate-400">numeric</span>
+                    </div>
+                  </th>
+                  <th className="px-3 py-2 font-medium text-right bg-slate-50/50 w-28">
+                    <div className="flex items-center justify-end gap-1">
+                      <span className="font-medium text-slate-800">actions</span>
+                      <span className="text-[10px] font-mono text-slate-400">menu</span>
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -566,8 +632,40 @@ export default function WalkInSalesPage() {
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
+            </tbody>
+          </table>
+          </div>
+        )}
+
+        {/* Pagination Bar */}
+        {!isLoading && filteredSales.length > 0 && (
+          <div
+            className="flex items-center justify-between px-4 py-3 border-t bg-white"
+            style={{ borderColor: "var(--color-border-base)" }}
+          >
+            <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+              Page {currentPage} of {totalPages}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="p-1.5 rounded border hover:bg-slate-50 transition-colors disabled:opacity-40 cursor-pointer"
+                style={{ borderColor: "var(--color-border-base)" }}
+              >
+                <ChevronLeft size={15} />
+              </button>
+
+              <button
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="p-1.5 rounded border hover:bg-slate-50 transition-colors disabled:opacity-40 cursor-pointer"
+                style={{ borderColor: "var(--color-border-base)" }}
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
           </div>
         )}
       </div>

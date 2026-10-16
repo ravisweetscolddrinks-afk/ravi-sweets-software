@@ -285,64 +285,87 @@ export default function EmployeeAttendancePage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen bg-slate-50/50">
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
       {/* Top Header */}
       <div
-        className="px-6 py-4 bg-white border-b flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b"
         style={{ borderColor: "var(--color-border-subtle)" }}
       >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center border bg-slate-50 text-[#348bdd]"
-            style={{ borderColor: "var(--color-border-base)" }}
-          >
-            <CalendarCheck size={20} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-medium text-slate-900">Employee Attendance</h1>
-              <span className="px-2 py-0.5 text-[11px] rounded-full font-mono bg-sky-50 text-[#348bdd] border border-sky-100">
-                {selectedDate === todayStr ? "Today" : selectedDate}
-              </span>
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{
+                backgroundColor: "var(--color-brand-primary-light)",
+                color: "var(--color-brand-primary)",
+              }}
+            >
+              <CalendarCheck size={18} />
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Daily attendance logger with Present, Absent, and Half-day status tracking
-            </p>
+            <h1
+              className="text-2xl text-[var(--color-text-primary)] tracking-tight"
+              style={{ fontWeight: 500 }}
+            >
+              Employee Attendance
+            </h1>
+            <span
+              className="px-2 py-0.5 text-xs rounded font-normal font-mono"
+              style={{
+                backgroundColor: "var(--color-bg-subtle)",
+                border: "1px solid var(--color-border-base)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              {selectedDate === todayStr ? "Today" : selectedDate}
+            </span>
           </div>
+          <p
+            className="text-xs mt-1"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            Daily attendance logger with Present, Absent, and Half-day status tracking.
+          </p>
         </div>
 
         {/* Date Selector & Navigator */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleDateOffset(-1)}
-            className="p-2 rounded-lg border bg-white hover:bg-slate-50 text-slate-700 cursor-pointer border-slate-200 shadow-2xs transition-colors"
-            title="Previous Day"
-          >
-            <ChevronLeft size={15} />
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleDateOffset(-1)}
+              className="p-1.5 rounded-md border bg-white hover:bg-slate-50 transition-colors cursor-pointer"
+              style={{ borderColor: "var(--color-border-base)" }}
+              title="Previous Day"
+            >
+              <ChevronLeft size={15} />
+            </button>
 
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border bg-white border-slate-200 shadow-2xs">
-            <Calendar size={14} className="text-slate-400" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="text-xs font-mono font-medium text-slate-900 bg-transparent focus:outline-none cursor-pointer"
-            />
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border bg-white"
+              style={{ borderColor: "var(--color-border-base)" }}
+            >
+              <Calendar size={13} className="text-slate-400" />
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="text-xs font-mono font-medium text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+              />
+            </div>
+
+            <button
+              onClick={() => handleDateOffset(1)}
+              className="p-1.5 rounded-md border bg-white hover:bg-slate-50 transition-colors cursor-pointer"
+              style={{ borderColor: "var(--color-border-base)" }}
+              title="Next Day"
+            >
+              <ChevronRight size={15} />
+            </button>
           </div>
-
-          <button
-            onClick={() => handleDateOffset(1)}
-            className="p-2 rounded-lg border bg-white hover:bg-slate-50 text-slate-700 cursor-pointer border-slate-200 shadow-2xs transition-colors"
-            title="Next Day"
-          >
-            <ChevronRight size={15} />
-          </button>
 
           {selectedDate !== todayStr && (
             <button
               onClick={() => setSelectedDate(todayStr)}
-              className="px-2.5 py-1.5 text-xs rounded-lg border bg-slate-50 text-[#348bdd] hover:bg-sky-50 border-sky-100 cursor-pointer font-medium shadow-2xs"
+              className="px-2.5 py-1.5 text-xs rounded-md border bg-slate-50 text-[#348bdd] hover:bg-sky-50 border-sky-100 cursor-pointer font-medium"
             >
               Today
             </button>
@@ -351,7 +374,7 @@ export default function EmployeeAttendancePage() {
           <button
             onClick={handleSaveAttendance}
             disabled={isSaving}
-            className="px-4 py-2 text-xs rounded-lg text-white font-medium cursor-pointer shadow-sm flex items-center gap-1.5 transition-opacity hover:opacity-90 disabled:opacity-60 ml-2"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs rounded-md text-white transition-opacity hover:opacity-90 font-normal shadow-xs cursor-pointer disabled:opacity-60"
             style={{ backgroundColor: "var(--color-brand-primary)" }}
           >
             {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -361,7 +384,7 @@ export default function EmployeeAttendancePage() {
       </div>
 
       {/* Metrics Bar */}
-      <div className="px-6 py-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="p-3.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
           <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 block">
             Total Staff
@@ -410,25 +433,31 @@ export default function EmployeeAttendancePage() {
       </div>
 
       {/* Bulk Action & Filter Bar */}
-      <div className="px-6 pb-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search staff by name, code, phone..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border bg-white focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-primary)]"
-            style={{ borderColor: "var(--color-border-base)" }}
-          />
-        </div>
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          {/* Search Box */}
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md border w-full sm:w-72 bg-white"
+            style={{
+              borderColor: "var(--color-border-base)",
+            }}
+          >
+            <Search size={14} style={{ color: "var(--color-text-muted)" }} />
+            <input
+              type="text"
+              placeholder="Search staff by name, code, phone..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full text-xs bg-transparent focus:outline-none"
+              style={{ color: "var(--color-text-primary)" }}
+            />
+          </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
           {/* Quick Filter */}
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="text-xs px-2.5 py-1.5 rounded-lg border bg-white focus:outline-none cursor-pointer"
+            className="text-xs px-2.5 py-1.5 rounded-md border bg-white focus:outline-none cursor-pointer"
             style={{ borderColor: "var(--color-border-base)" }}
           >
             <option value="all">All Statuses</option>
@@ -441,154 +470,219 @@ export default function EmployeeAttendancePage() {
           <button
             type="button"
             onClick={() => handleMarkAll("Present")}
-            className="px-2.5 py-1.5 text-xs rounded-lg border bg-white hover:bg-emerald-50 text-emerald-700 font-medium cursor-pointer border-emerald-200 transition-colors shadow-2xs"
+            className="px-2.5 py-1.5 text-xs rounded-md border bg-white hover:bg-emerald-50 text-emerald-700 font-medium cursor-pointer border-emerald-200 transition-colors shadow-2xs"
           >
             All Present
           </button>
           <button
             type="button"
             onClick={() => handleMarkAll("Absent")}
-            className="px-2.5 py-1.5 text-xs rounded-lg border bg-white hover:bg-rose-50 text-rose-700 font-medium cursor-pointer border-rose-200 transition-colors shadow-2xs"
+            className="px-2.5 py-1.5 text-xs rounded-md border bg-white hover:bg-rose-50 text-rose-700 font-medium cursor-pointer border-rose-200 transition-colors shadow-2xs"
           >
             All Absent
           </button>
         </div>
+
+        <div
+          className="text-xs self-end sm:self-center font-normal"
+          style={{ color: "var(--color-text-muted)" }}
+        >
+          Showing {filteredEmployees.length} of {employees.length} employees
+        </div>
       </div>
 
-      {/* Main Attendance Table */}
-      <div className="flex-1 px-6 pb-12">
-        <div
-          className="bg-white rounded-xl border overflow-hidden shadow-2xs"
-          style={{ borderColor: "var(--color-border-subtle)" }}
-        >
-          {isLoadingEmployees || isLoadingAttendance ? (
-            <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
-              <Loader2 size={24} className="animate-spin text-[#348bdd]" />
-              <span className="text-xs">Loading attendance sheet...</span>
+      {/* Main Attendance Table (Supabase Table Editor Grid Style) */}
+      <div
+        className="rounded-lg border bg-white overflow-hidden shadow-xs"
+        style={{ borderColor: "var(--color-border-base)" }}
+      >
+        {isLoadingEmployees || isLoadingAttendance ? (
+          <div className="py-20 flex flex-col items-center justify-center gap-3">
+            <Loader2
+              size={24}
+              className="animate-spin"
+              style={{ color: "var(--color-brand-primary)" }}
+            />
+            <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+              Loading attendance sheet...
+            </span>
+          </div>
+        ) : filteredEmployees.length === 0 ? (
+          <div className="py-20 flex flex-col items-center justify-center text-center p-6">
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+              style={{
+                backgroundColor: "var(--color-bg-subtle)",
+                color: "var(--color-text-muted)",
+              }}
+            >
+              <Users size={22} />
             </div>
-          ) : filteredEmployees.length === 0 ? (
-            <div className="py-16 text-center text-slate-500 text-xs">
-              No matching employees found.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50/80 border-b text-slate-600 font-medium border-slate-200/80">
-                    <th className="py-3 px-4 w-12 text-center">Avatar</th>
-                    <th className="py-3 px-4 w-32">Employee ID</th>
-                    <th className="py-3 px-4">Staff Member</th>
-                    <th className="py-3 px-4">Salary Plan</th>
-                    <th className="py-3 px-4 text-center w-72">Attendance Status</th>
-                    <th className="py-3 px-4">Notes / Shift Remarks</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredEmployees.map((emp) => {
-                    const row = attendanceState[emp.id] || { status: "Present", notes: "" };
-                    return (
-                      <tr key={emp.id} className="hover:bg-slate-50/60 transition-colors">
-                        {/* Avatar */}
-                        <td className="py-2.5 px-4 text-center">
-                          {emp.profilePicUrl ? (
-                            <img
-                              src={emp.profilePicUrl}
-                              alt={emp.name}
-                              className="w-8 h-8 rounded-full object-cover border border-slate-200 mx-auto shadow-2xs"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 border border-slate-200 flex items-center justify-center font-medium mx-auto">
-                              {emp.name.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* ID */}
-                        <td className="py-2.5 px-4 font-mono text-[11px] text-[#348bdd] font-medium">
-                          {emp.employeeId}
-                        </td>
-
-                        {/* Name & Phone */}
-                        <td className="py-2.5 px-4">
-                          <div className="font-medium text-slate-900">{emp.name}</div>
-                          <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                            {emp.phone} • {emp.city}
-                          </div>
-                        </td>
-
-                        {/* Salary Plan */}
-                        <td className="py-2.5 px-4 font-mono text-slate-600">
-                          <span className="capitalize">{emp.salaryType}</span> (₹{emp.salaryAmount})
-                          <div className="text-[10px] text-slate-400">
-                            Leaves: {emp.acceptedLeaves} / mo
-                          </div>
-                        </td>
-
-                        {/* Status Toggle Buttons */}
-                        <td className="py-2.5 px-4 text-center">
-                          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 gap-1 shadow-2xs">
-                            {/* Present */}
-                            <button
-                              type="button"
-                              onClick={() => handleStatusChange(emp.id, "Present")}
-                              className={`px-3 py-1.5 rounded-md font-medium text-xs flex items-center gap-1 transition-all cursor-pointer ${
-                                row.status === "Present"
-                                  ? "bg-emerald-600 text-white shadow-2xs"
-                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                              }`}
-                            >
-                              <CheckCircle2 size={13} />
-                              <span>Present</span>
-                            </button>
-
-                            {/* Absent */}
-                            <button
-                              type="button"
-                              onClick={() => handleStatusChange(emp.id, "Absent")}
-                              className={`px-3 py-1.5 rounded-md font-medium text-xs flex items-center gap-1 transition-all cursor-pointer ${
-                                row.status === "Absent"
-                                  ? "bg-rose-600 text-white shadow-2xs"
-                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                              }`}
-                            >
-                              <XCircle size={13} />
-                              <span>Absent</span>
-                            </button>
-
-                            {/* Half Day */}
-                            <button
-                              type="button"
-                              onClick={() => handleStatusChange(emp.id, "Half Day")}
-                              className={`px-3 py-1.5 rounded-md font-medium text-xs flex items-center gap-1 transition-all cursor-pointer ${
-                                row.status === "Half Day"
-                                  ? "bg-amber-600 text-white shadow-2xs"
-                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                              }`}
-                            >
-                              <Clock size={13} />
-                              <span>Half Day</span>
-                            </button>
-                          </div>
-                        </td>
-
-                        {/* Notes Input */}
-                        <td className="py-2.5 px-4">
-                          <input
-                            type="text"
-                            placeholder="Optional shift notes..."
-                            value={row.notes}
-                            onChange={(e) => handleNotesChange(emp.id, e.target.value)}
-                            className="w-full text-xs px-2.5 py-1 rounded-md border bg-white focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-primary)] border-slate-200"
+            <h3
+              className="text-sm text-[var(--color-text-primary)]"
+              style={{ fontWeight: 500 }}
+            >
+              No matching employees found
+            </h3>
+            <p className="text-xs mt-1 max-w-sm" style={{ color: "var(--color-text-muted)" }}>
+              Try searching for a different name, employee ID, or change the status filter.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto border-t" style={{ borderColor: "var(--color-border-base)" }}>
+            <table className="w-full text-left text-xs border-collapse">
+              <thead
+                className="border-b select-none sticky top-0 z-10"
+                style={{
+                  backgroundColor: "var(--color-bg-surface)",
+                  borderColor: "var(--color-border-base)",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                <tr className="divide-x divide-slate-200 text-[11px]">
+                  <th className="px-3 py-2 font-medium bg-slate-50/50 w-12 text-center">
+                    <span className="font-medium text-slate-800">avatar</span>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 w-36">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">employee_id</span>
+                      <span className="text-[10px] font-mono text-slate-400">varchar</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 min-w-[180px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">staff_member</span>
+                      <span className="text-[10px] font-mono text-slate-400">entity</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 min-w-[160px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">salary_plan</span>
+                      <span className="text-[10px] font-mono text-slate-400">varchar</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 text-center w-72">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="font-medium text-slate-800">attendance_status</span>
+                      <span className="text-[10px] font-mono text-slate-400">status</span>
+                    </div>
+                  </th>
+                  <th className="px-3.5 py-2 font-medium bg-slate-50/50 min-w-[200px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-800">shift_remarks</span>
+                      <span className="text-[10px] font-mono text-slate-400">text</span>
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {filteredEmployees.map((emp) => {
+                  const row = attendanceState[emp.id] || { status: "Present", notes: "" };
+                  return (
+                    <tr
+                      key={emp.id}
+                      className="divide-x divide-slate-200 hover:bg-slate-50/80 transition-colors"
+                    >
+                      {/* Avatar */}
+                      <td className="px-2 py-1.5 text-center">
+                        {emp.profilePicUrl ? (
+                          <img
+                            src={emp.profilePicUrl}
+                            alt={emp.name}
+                            className="w-7 h-7 rounded-full object-cover border border-slate-200 mx-auto shadow-2xs"
                           />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 border border-slate-200 flex items-center justify-center font-medium mx-auto text-[11px] font-mono">
+                            {emp.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* ID */}
+                      <td className="px-3.5 py-2 font-mono text-[11px] text-[#348bdd] font-medium">
+                        {emp.employeeId || <span className="font-mono text-slate-300 italic text-[11px]">NULL</span>}
+                      </td>
+
+                      {/* Name & Phone */}
+                      <td className="px-3.5 py-2">
+                        <div className="font-medium text-slate-900">{emp.name}</div>
+                        <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                          {emp.phone} • {emp.city}
+                        </div>
+                      </td>
+
+                      {/* Salary Plan */}
+                      <td className="px-3.5 py-2 font-mono text-slate-700">
+                        <span className="capitalize">{emp.salaryType}</span> (₹{emp.salaryAmount})
+                        <div className="text-[10px] text-slate-400">
+                          Leaves: {emp.acceptedLeaves} / mo
+                        </div>
+                      </td>
+
+                      {/* Status Toggle Buttons */}
+                      <td className="px-3.5 py-2 text-center">
+                        <div className="inline-flex rounded-md border border-slate-200 p-0.5 bg-slate-50 gap-1 shadow-2xs">
+                          {/* Present */}
+                          <button
+                            type="button"
+                            onClick={() => handleStatusChange(emp.id, "Present")}
+                            className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1 transition-all cursor-pointer ${
+                              row.status === "Present"
+                                ? "bg-emerald-600 text-white shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                            }`}
+                          >
+                            <CheckCircle2 size={12} />
+                            <span>Present</span>
+                          </button>
+
+                          {/* Absent */}
+                          <button
+                            type="button"
+                            onClick={() => handleStatusChange(emp.id, "Absent")}
+                            className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1 transition-all cursor-pointer ${
+                              row.status === "Absent"
+                                ? "bg-rose-600 text-white shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                            }`}
+                          >
+                            <XCircle size={12} />
+                            <span>Absent</span>
+                          </button>
+
+                          {/* Half Day */}
+                          <button
+                            type="button"
+                            onClick={() => handleStatusChange(emp.id, "Half Day")}
+                            className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1 transition-all cursor-pointer ${
+                              row.status === "Half Day"
+                                ? "bg-amber-600 text-white shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                            }`}
+                          >
+                            <Clock size={12} />
+                            <span>Half Day</span>
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* Notes Input */}
+                      <td className="px-3.5 py-2">
+                        <input
+                          type="text"
+                          placeholder="Optional shift notes..."
+                          value={row.notes}
+                          onChange={(e) => handleNotesChange(emp.id, e.target.value)}
+                          className="w-full text-xs px-2.5 py-1 rounded border bg-white focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-primary)] border-slate-200"
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
