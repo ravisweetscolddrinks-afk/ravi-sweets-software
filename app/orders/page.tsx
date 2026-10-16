@@ -285,10 +285,14 @@ export default function OrdersPage() {
     try {
       const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
       const snapshot = await getDocs(q);
-      const items: OrderRecord[] = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<OrderRecord, "id">),
-      }));
+      const itemsMap = new Map<string, OrderRecord>();
+      snapshot.docs.forEach((docSnap) => {
+        itemsMap.set(docSnap.id, {
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<OrderRecord, "id">),
+        });
+      });
+      const items = Array.from(itemsMap.values());
       setOrders(items);
       setTotalCount(items.length);
     } catch (err) {
@@ -308,10 +312,14 @@ export default function OrdersPage() {
     const unsubOrders = onSnapshot(
       ordersQuery,
       (snapshot) => {
-        const items: OrderRecord[] = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<OrderRecord, "id">),
-        }));
+        const itemsMap = new Map<string, OrderRecord>();
+        snapshot.docs.forEach((docSnap) => {
+          itemsMap.set(docSnap.id, {
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<OrderRecord, "id">),
+          });
+        });
+        const items = Array.from(itemsMap.values());
         setOrders(items);
         setTotalCount(items.length);
         setIsLoading(false);
@@ -342,12 +350,14 @@ export default function OrdersPage() {
     const unsubCustomers = onSnapshot(
       query(collection(db, "customers"), orderBy("name", "asc")),
       (custSnap) => {
-        setCustomersList(
-          custSnap.docs.map((d) => ({
+        const cMap = new Map<string, CustomerOption>();
+        custSnap.docs.forEach((d) => {
+          cMap.set(d.id, {
             id: d.id,
             ...(d.data() as Omit<CustomerOption, "id">),
-          }))
-        );
+          });
+        });
+        setCustomersList(Array.from(cMap.values()));
       },
       (err) => console.warn("Realtime customers error:", err)
     );
@@ -356,12 +366,14 @@ export default function OrdersPage() {
     const unsubStores = onSnapshot(
       query(collection(db, "stores"), orderBy("name", "asc")),
       (storeSnap) => {
-        setStoresList(
-          storeSnap.docs.map((d) => ({
+        const sMap = new Map<string, StoreOption>();
+        storeSnap.docs.forEach((d) => {
+          sMap.set(d.id, {
             id: d.id,
             ...(d.data() as Omit<StoreOption, "id">),
-          }))
-        );
+          });
+        });
+        setStoresList(Array.from(sMap.values()));
       },
       (err) => console.warn("Realtime stores error:", err)
     );
@@ -370,8 +382,9 @@ export default function OrdersPage() {
     const unsubProducts = onSnapshot(
       query(collection(db, "products"), orderBy("name", "asc")),
       (prodSnap) => {
-        setProductsList(
-          prodSnap.docs.map((d) => ({
+        const pMap = new Map<string, ProductCatalogItem>();
+        prodSnap.docs.forEach((d) => {
+          pMap.set(d.id, {
             id: d.id,
             name: d.data().name || "",
             unit: d.data().unit || "piece",
@@ -380,8 +393,9 @@ export default function OrdersPage() {
             categoryName: d.data().categoryName || "",
             barcode: d.data().barcode || "",
             shortCode: d.data().shortCode || "",
-          }))
-        );
+          });
+        });
+        setProductsList(Array.from(pMap.values()));
       },
       (err) => console.warn("Realtime products error:", err)
     );
@@ -453,9 +467,13 @@ export default function OrdersPage() {
     }
   }, [currentDateStr, customStartDate, customEndDate]);
 
-  // Filtered Orders
+  // Filtered Orders (Deduplicated by ID)
   const filteredOrders = useMemo(() => {
+    const seenIds = new Set<string>();
     return orders.filter((o) => {
+      if (!o.id || seenIds.has(o.id)) return false;
+      seenIds.add(o.id);
+
       // Date filter check
       const dateToCheck = o.deliveryDate || (o.createdAt?.toDate ? o.createdAt.toDate().toISOString().split("T")[0] : "");
       const matchesDate = isDateInRange(dateToCheck, dateFilter);
@@ -912,10 +930,28 @@ export default function OrdersPage() {
       const cust = customersList.find((c) => c.id === selectedCustomerId);
       const store = storesList.find((s) => s.id === selectedStoreId);
 
+      // Generate full numeric order number: YYMMDDHHMMSS (Year, Month, Date, Hours, Minutes, Seconds)
+      const generateNumericOrderNumber = () => {
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, "0");
+        const dd = String(now.getDate()).padStart(2, "0");
+        const hh = String(now.getHours()).padStart(2, "0");
+        const min = String(now.getMinutes()).padStart(2, "0");
+        const ss = String(now.getSeconds()).padStart(2, "0");
+        let candidate = `${yy}${mm}${dd}${hh}${min}${ss}`;
+        const existingNumbers = new Set(orders.map((o) => o.orderNumber));
+        if (existingNumbers.has(candidate)) {
+          const ms = String(now.getMilliseconds()).padStart(3, "0").slice(0, 2);
+          candidate = `${yy}${mm}${dd}${hh}${min}${ms}`;
+        }
+        return candidate;
+      };
+
       const generatedNumber =
         editingOrderId && orders.find((o) => o.id === editingOrderId)?.orderNumber
           ? orders.find((o) => o.id === editingOrderId)!.orderNumber
-          : `RS-ORD-${Date.now().toString().slice(-6)}`;
+          : generateNumericOrderNumber();
 
       const sanitizedItems = selectedItems.map((item) => ({
         id: item.id || `line_${Date.now()}`,
@@ -930,7 +966,7 @@ export default function OrdersPage() {
       }));
 
       const rawOrderPayload: any = {
-        orderNumber: generatedNumber || `RS-ORD-${Date.now().toString().slice(-6)}`,
+        orderNumber: generatedNumber,
         customerId: selectedCustomerId || "",
         customerName: cust?.name || "Walk-In Customer",
         customerPhone: cust?.phone || "",
@@ -1025,20 +1061,13 @@ export default function OrdersPage() {
       } else {
         // Create Order
         const colRef = collection(db, "orders");
-        const docRef = await addDoc(colRef, {
+        await addDoc(colRef, {
           ...orderPayload,
           createdAt: serverTimestamp(),
         });
 
-        const newRecord: OrderRecord = {
-          id: docRef.id,
-          ...orderPayload,
-          createdAt: Timestamp.now(),
-        };
-
-        setOrders((prev) => [newRecord, ...prev]);
-        setTotalCount((prev) => prev + 1);
-
+        // onSnapshot listener will automatically receive the newly added doc from Firestore
+        // and update the orders list without duplicate race conditions!
         showToast(`Order "${generatedNumber}" created successfully!`, "success");
       }
 
@@ -1406,11 +1435,11 @@ export default function OrdersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {paginatedOrders.map((o) => {
+              {paginatedOrders.map((o, idx) => {
                 const isSelected = selectedIds.has(o.id);
                 return (
                   <tr
-                    key={o.id}
+                    key={o.id ? `${o.id}_${idx}` : `order_${idx}`}
                     className={`divide-x divide-slate-200 transition-colors ${
                       isSelected ? "bg-sky-50/60" : "hover:bg-slate-50/80"
                     }`}
@@ -1808,7 +1837,7 @@ export default function OrdersPage() {
 
                 {/* Products Grid - E-commerce Product Tile Layout (Compact & Non-stretching) */}
                 <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3.5 pr-1 pb-4 content-start items-start">
-                  {filteredCatalog.map((prod) => {
+                  {filteredCatalog.map((prod, pIdx) => {
                     const isWeight =
                       prod.unit.toLowerCase() === "kg" ||
                       prod.unit.toLowerCase().includes("kilo") ||
@@ -1821,7 +1850,7 @@ export default function OrdersPage() {
 
                     return (
                       <div
-                        key={prod.id}
+                        key={prod.id ? `${prod.id}_${pIdx}` : `prod_${pIdx}`}
                         onClick={() => handleCatalogItemClick(prod)}
                         className={`rounded-xl border p-2.5 flex flex-col transition-all cursor-pointer select-none group relative bg-white hover:border-[#348bdd] hover:shadow-md ${
                           inCartCount > 0
@@ -1929,7 +1958,7 @@ export default function OrdersPage() {
                       item.unit.toLowerCase() === "box";
 
                     return (
-                      <div key={item.id} className="py-2.5 first:pt-0 last:pb-0 space-y-1">
+                      <div key={item.id ? `${item.id}_${idx}` : `item_${idx}`} className="py-2.5 first:pt-0 last:pb-0 space-y-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <div className="text-xs font-medium text-slate-900 truncate">

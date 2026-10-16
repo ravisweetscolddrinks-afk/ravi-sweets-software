@@ -139,10 +139,14 @@ export default function GenericUnitManager({
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const records: UnitItem[] = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<UnitItem, "id">),
-        }));
+        const itemsMap = new Map<string, UnitItem>();
+        snapshot.docs.forEach((docSnap) => {
+          itemsMap.set(docSnap.id, {
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<UnitItem, "id">),
+          });
+        });
+        const records = Array.from(itemsMap.values());
         setItems(records);
         setTotalCount(records.length);
         setIsLoading(false);
@@ -158,9 +162,15 @@ export default function GenericUnitManager({
 
   // Search filter
   const filteredItems = useMemo(() => {
-    if (!searchQuery.trim()) return items;
+    const seen = new Set<string>();
+    const unique = items.filter((item) => {
+      if (!item.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+    if (!searchQuery.trim()) return unique;
     const q = searchQuery.toLowerCase().trim();
-    return items.filter(
+    return unique.filter(
       (item) =>
         item.name.toLowerCase().includes(q) ||
         (item.description && item.description.toLowerCase().includes(q))
@@ -242,7 +252,7 @@ export default function GenericUnitManager({
           createdAt: Timestamp.now(),
         };
 
-        setItems((prev) => [newItem, ...prev]);
+        setItems((prev) => [newItem, ...prev.filter((i) => i.id !== newItem.id)]);
         setTotalCount((prev) => prev + 1);
 
         showToast(`"${formData.name.trim()}" created successfully!`, "success");

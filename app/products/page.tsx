@@ -153,10 +153,14 @@ export default function ProductsPage() {
     const unsubProducts = onSnapshot(
       q,
       (snapshot) => {
-        const items: ProductItem[] = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<ProductItem, "id">),
-        }));
+        const itemsMap = new Map<string, ProductItem>();
+        snapshot.docs.forEach((docSnap) => {
+          itemsMap.set(docSnap.id, {
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<ProductItem, "id">),
+          });
+        });
+        const items = Array.from(itemsMap.values());
         setProducts(items);
         setTotalCount(items.length);
         setIsLoading(false);
@@ -219,9 +223,15 @@ export default function ProductsPage() {
 
   // Search filtering
   const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return products;
+    const seen = new Set<string>();
+    const unique = products.filter((p) => {
+      if (!p.id || seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+    if (!searchQuery.trim()) return unique;
     const q = searchQuery.toLowerCase().trim();
-    return products.filter(
+    return unique.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.barcode.toLowerCase().includes(q) ||
@@ -442,7 +452,7 @@ export default function ProductsPage() {
           createdAt: Timestamp.now(),
         };
 
-        setProducts((prev) => [newProduct, ...prev]);
+        setProducts((prev) => [newProduct, ...prev.filter((p) => p.id !== newProduct.id)]);
         setTotalCount((prev) => prev + 1);
 
         showToast(`Product "${formData.name.trim()}" saved successfully!`, "success");

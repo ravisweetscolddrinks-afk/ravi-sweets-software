@@ -126,10 +126,14 @@ export default function StoresPage() {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const items: StoreItem[] = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<StoreItem, "id">),
-        }));
+        const itemsMap = new Map<string, StoreItem>();
+        snapshot.docs.forEach((docSnap) => {
+          itemsMap.set(docSnap.id, {
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<StoreItem, "id">),
+          });
+        });
+        const items = Array.from(itemsMap.values());
         setStores(items);
         setTotalCount(items.length);
         setIsLoading(false);
@@ -145,9 +149,15 @@ export default function StoresPage() {
 
   // Search filtering
   const filteredStores = useMemo(() => {
-    if (!searchQuery.trim()) return stores;
+    const seen = new Set<string>();
+    const unique = stores.filter((s) => {
+      if (!s.id || seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    });
+    if (!searchQuery.trim()) return unique;
     const q = searchQuery.toLowerCase().trim();
-    return stores.filter(
+    return unique.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
         s.phone.toLowerCase().includes(q) ||
@@ -242,7 +252,7 @@ export default function StoresPage() {
           createdAt: Timestamp.now(),
         };
 
-        setStores((prev) => [newStore, ...prev]);
+        setStores((prev) => [newStore, ...prev.filter((s) => s.id !== newStore.id)]);
         setTotalCount((prev) => prev + 1);
 
         showToast(`Store "${formData.name.trim()}" added successfully!`, "success");

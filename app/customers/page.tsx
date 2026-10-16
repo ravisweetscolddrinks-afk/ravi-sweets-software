@@ -133,10 +133,14 @@ export default function CustomersPage() {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const items: CustomerItem[] = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<CustomerItem, "id">),
-        }));
+        const itemsMap = new Map<string, CustomerItem>();
+        snapshot.docs.forEach((docSnap) => {
+          itemsMap.set(docSnap.id, {
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<CustomerItem, "id">),
+          });
+        });
+        const items = Array.from(itemsMap.values());
         setCustomers(items);
         setTotalCount(items.length);
         setIsLoading(false);
@@ -152,9 +156,15 @@ export default function CustomersPage() {
 
   // Search filtering
   const filteredCustomers = useMemo(() => {
-    if (!searchQuery.trim()) return customers;
+    const seen = new Set<string>();
+    const unique = customers.filter((c) => {
+      if (!c.id || seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    });
+    if (!searchQuery.trim()) return unique;
     const q = searchQuery.toLowerCase().trim();
-    return customers.filter(
+    return unique.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.phone.toLowerCase().includes(q) ||
@@ -255,7 +265,7 @@ export default function CustomersPage() {
           createdAt: Timestamp.now(),
         };
 
-        setCustomers((prev) => [newCustomer, ...prev]);
+        setCustomers((prev) => [newCustomer, ...prev.filter((c) => c.id !== newCustomer.id)]);
         setTotalCount((prev) => prev + 1);
 
         showToast(`Customer "${formData.name.trim()}" added successfully!`, "success");
