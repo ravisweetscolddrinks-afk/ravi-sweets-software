@@ -72,6 +72,7 @@ export type OrderStatus =
   | "Manufacturing In Progress"
   | "Manufacturing Completed"
   | "Moved to Packing"
+  | "Received at Packing"
   | "Packing In Progress"
   | "Packing Completed"
   | "Moved to Store"
@@ -92,6 +93,12 @@ export interface OrderItem {
   totalAmount: number;
   manufacturingDescription?: string;
   imageUrl?: string;
+  manufacturingUnitId?: string;
+  manufacturingUnitName?: string;
+  packingUnitId?: string;
+  packingUnitName?: string;
+  piecesPerKg?: number | string;
+  status?: OrderStatus;
 }
 
 export interface SplitPaymentDetail {
@@ -166,6 +173,11 @@ export interface ProductCatalogItem {
   categoryName?: string;
   barcode?: string;
   shortCode?: string;
+  manufacturingUnitId?: string;
+  manufacturingUnitName?: string;
+  packingUnitId?: string;
+  packingUnitName?: string;
+  piecesPerKg?: number | string;
 }
 
 type DateFilterType =
@@ -184,6 +196,7 @@ const ORDER_STATUS_LIST: OrderStatus[] = [
   "Manufacturing In Progress",
   "Manufacturing Completed",
   "Moved to Packing",
+  "Received at Packing",
   "Packing In Progress",
   "Packing Completed",
   "Moved to Store",
@@ -384,15 +397,21 @@ export default function OrdersPage() {
       (prodSnap) => {
         const pMap = new Map<string, ProductCatalogItem>();
         prodSnap.docs.forEach((d) => {
+          const data = d.data();
           pMap.set(d.id, {
             id: d.id,
-            name: d.data().name || "",
-            unit: d.data().unit || "piece",
-            amount: Number(d.data().amount) || 0,
-            imageUrl: d.data().imageUrl || "",
-            categoryName: d.data().categoryName || "",
-            barcode: d.data().barcode || "",
-            shortCode: d.data().shortCode || "",
+            name: data.name || "",
+            unit: data.unit || "piece",
+            amount: Number(data.amount) || 0,
+            imageUrl: data.imageUrl || "",
+            categoryName: data.categoryName || "",
+            barcode: data.barcode || "",
+            shortCode: data.shortCode || "",
+            manufacturingUnitId: data.manufacturingUnitId || "",
+            manufacturingUnitName: data.manufacturingUnitName || "",
+            packingUnitId: data.packingUnitId || "",
+            packingUnitName: data.packingUnitName || "",
+            piecesPerKg: data.piecesPerKg || "",
           });
         });
         setProductsList(Array.from(pMap.values()));
@@ -953,17 +972,26 @@ export default function OrdersPage() {
           ? orders.find((o) => o.id === editingOrderId)!.orderNumber
           : generateNumericOrderNumber();
 
-      const sanitizedItems = selectedItems.map((item) => ({
-        id: item.id || `line_${Date.now()}`,
-        productId: item.productId || "",
-        name: item.name || "",
-        unit: item.unit || "piece",
-        rate: Number(item.rate) || 0,
-        quantity: Number(item.quantity) || 0,
-        totalAmount: Number(item.totalAmount) || 0,
-        manufacturingDescription: item.manufacturingDescription || "",
-        imageUrl: item.imageUrl || "",
-      }));
+      const sanitizedItems = selectedItems.map((item) => {
+        const prod = productsList.find((p) => p.id === item.productId);
+        return {
+          id: item.id || `line_${Date.now()}`,
+          productId: item.productId || "",
+          name: item.name || "",
+          unit: item.unit || "piece",
+          rate: Number(item.rate) || 0,
+          quantity: Number(item.quantity) || 0,
+          totalAmount: Number(item.totalAmount) || 0,
+          manufacturingDescription: item.manufacturingDescription || "",
+          imageUrl: item.imageUrl || "",
+          manufacturingUnitId: item.manufacturingUnitId || prod?.manufacturingUnitId || "",
+          manufacturingUnitName: item.manufacturingUnitName || prod?.manufacturingUnitName || "",
+          packingUnitId: item.packingUnitId || prod?.packingUnitId || "",
+          packingUnitName: item.packingUnitName || prod?.packingUnitName || "",
+          piecesPerKg: item.piecesPerKg || prod?.piecesPerKg || "",
+          status: item.status || "Created",
+        };
+      });
 
       const rawOrderPayload: any = {
         orderNumber: generatedNumber,
@@ -1107,6 +1135,7 @@ export default function OrdersPage() {
       case "Manufacturing Completed":
         return "bg-purple-50 text-purple-600 border-purple-200";
       case "Moved to Packing":
+      case "Received at Packing":
       case "Packing In Progress":
         return "bg-indigo-50 text-indigo-600 border-indigo-200";
       case "Packing Completed":
