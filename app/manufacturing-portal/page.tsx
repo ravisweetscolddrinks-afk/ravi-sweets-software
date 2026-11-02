@@ -39,6 +39,8 @@ import {
   Flame,
   ChefHat,
   Info,
+  Image as ImageIcon,
+  X,
 } from "lucide-react";
 import { OrderRecord, OrderItem, OrderStatus } from "@/types/order";
 
@@ -66,6 +68,7 @@ interface ConsolidatedItemBreakdown {
   deliveryDate: string;
   deliveryTime: string;
   packingDescription: string;
+  orderImageUrl?: string;
   lineId: string;
   quantity: number;
   unit: string;
@@ -114,6 +117,7 @@ export default function ManufacturingPortalPage() {
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
+  const [selectedEnlargedImage, setSelectedEnlargedImage] = useState<string | null>(null);
 
   // 1. Real-time Subscription to Orders, Manufacturing Units, and Products
   useEffect(() => {
@@ -321,6 +325,7 @@ export default function ManufacturingPortalPage() {
           deliveryDate: order.deliveryDate,
           deliveryTime: order.deliveryTime,
           packingDescription: order.packingDescription,
+          orderImageUrl: order.imageUrl || "",
           lineId: item.id,
           quantity: item.quantity,
           unit: item.unit,
@@ -980,6 +985,21 @@ export default function ManufacturingPortalPage() {
                                         ({breakdown.customerPhone})
                                       </span>
                                     )}
+                                    {breakdown.orderImageUrl && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedEnlargedImage(breakdown.orderImageUrl!)}
+                                        className="relative group shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[10px] font-medium transition-all cursor-pointer shadow-2xs"
+                                        title="Click to view custom reference photo"
+                                      >
+                                        <img
+                                          src={breakdown.orderImageUrl}
+                                          alt="Custom design"
+                                          className="w-4 h-4 rounded object-cover"
+                                        />
+                                        <span>Photo</span>
+                                      </button>
+                                    )}
                                   </div>
 
                                   <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500 font-mono">
@@ -1245,6 +1265,37 @@ export default function ManufacturingPortalPage() {
                       </div>
                     </div>
 
+                    {/* Order Reference Photo (Custom decoration/cake sample) */}
+                    {order.imageUrl && (
+                      <div className="px-5 py-2.5 bg-amber-50/60 border-b border-amber-200/70 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={order.imageUrl}
+                            alt="Order Reference"
+                            onClick={() => setSelectedEnlargedImage(order.imageUrl!)}
+                            className="w-12 h-12 rounded-lg object-cover border border-amber-300 shadow-2xs cursor-pointer hover:scale-105 transition-transform bg-white"
+                          />
+                          <div>
+                            <span className="text-xs font-semibold text-amber-950 flex items-center gap-1.5">
+                              <Sparkles size={13} className="text-amber-600" />
+                              Custom Reference Photo Attached
+                            </span>
+                            <span className="text-[11px] text-amber-800/80">
+                              Chefs: inspect this photo for decoration, cake icing, or custom shapes.
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedEnlargedImage(order.imageUrl!)}
+                          className="px-2.5 py-1 bg-white hover:bg-amber-100/70 border border-amber-300 text-amber-900 text-xs font-medium rounded-lg transition-colors shadow-2xs cursor-pointer shrink-0 flex items-center gap-1"
+                        >
+                          <ImageIcon size={13} />
+                          <span>View Full Photo</span>
+                        </button>
+                      </div>
+                    )}
+
                     {/* Order Items Table */}
                     <div className="p-4 overflow-x-auto">
                       <table className="w-full text-left text-xs border-collapse">
@@ -1383,6 +1434,32 @@ export default function ManufacturingPortalPage() {
           )
         )}
       </div>
+
+      {/* Enlarged Image Lightbox Modal */}
+      {selectedEnlargedImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setSelectedEnlargedImage(null)}
+        >
+          <div
+            className="relative max-w-3xl max-h-[90vh] bg-white rounded-2xl overflow-hidden shadow-2xl p-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedEnlargedImage(null)}
+              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+            <img
+              src={selectedEnlargedImage}
+              alt="Enlarged Reference"
+              className="max-h-[82vh] w-auto max-w-full rounded-xl object-contain mx-auto"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

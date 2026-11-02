@@ -68,7 +68,10 @@ import {
   Wallet,
   History,
   FileText,
-  Building2
+  Building2,
+  Image as ImageIcon,
+  UploadCloud,
+  ZoomIn,
 } from "lucide-react";
 
 // --- TYPES ---
@@ -134,6 +137,7 @@ export interface OrderRecord {
   deliveryDate: string; // YYYY-MM-DD
   deliveryTime: string; // HH:MM AM/PM
   packingDescription: string;
+  imageUrl?: string;
   items: OrderItem[];
   subtotal: number;
   discount: number;
@@ -316,6 +320,10 @@ export default function OrdersPage() {
   const [deliveryDate, setDeliveryDate] = useState<string>("");
   const [deliveryTime, setDeliveryTime] = useState<string>("11:00 AM");
   const [packingDescription, setPackingDescription] = useState<string>("");
+  const [orderImageFile, setOrderImageFile] = useState<File | null>(null);
+  const [orderImagePreview, setOrderImagePreview] = useState<string>("");
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
+  const [selectedEnlargedImage, setSelectedEnlargedImage] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);
   const [discountAmount, setDiscountAmount] = useState<number | "">("");
   const [receivedAmount, setReceivedAmount] = useState<number | "">("");
@@ -900,6 +908,8 @@ export default function OrdersPage() {
     setDeliveryDate(new Date().toISOString().split("T")[0]);
     setDeliveryTime("11:00 AM");
     setPackingDescription("");
+    setOrderImageFile(null);
+    setOrderImagePreview("");
     setSelectedItems([]);
     setDiscountAmount("");
     setReceivedAmount("");
@@ -1019,6 +1029,8 @@ export default function OrdersPage() {
     setDeliveryDate(order.deliveryDate);
     setDeliveryTime(order.deliveryTime);
     setPackingDescription(order.packingDescription || "");
+    setOrderImageFile(null);
+    setOrderImagePreview(order.imageUrl || "");
     setSelectedItems(order.items || []);
     setDiscountAmount(order.discount || "");
     setReceivedAmount(order.receivedAmount || "");
@@ -1027,6 +1039,23 @@ export default function OrdersPage() {
     setOrderStatus(order.orderStatus);
     setFormValidationErrors({});
     setIsOrderModalOpen(true);
+  };
+
+  // Handle Order Reference Image selection
+  const handleOrderImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        showToast("Image size exceeds 10MB limit. Please choose a smaller photo.", "error");
+        return;
+      }
+      setOrderImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setOrderImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // Validate Order Form
@@ -1075,6 +1104,34 @@ export default function OrdersPage() {
           ? orders.find((o) => o.id === editingOrderId)!.orderNumber
           : generateNumericOrderNumber();
 
+      // Upload Reference Image to ImageKit if a new file was chosen
+      let uploadedImageUrl = orderImagePreview;
+      if (orderImageFile) {
+        setIsUploadingImage(true);
+        try {
+          const uploadData = new FormData();
+          uploadData.append("file", orderImageFile);
+          uploadData.append("folder", "/orders");
+          uploadData.append("fileName", `order-${generatedNumber}-${Date.now()}.jpg`);
+          const uploadRes = await fetch("/api/upload", {
+            method: "POST",
+            body: uploadData,
+          });
+          if (uploadRes.ok) {
+            const uploadJson = await uploadRes.json();
+            uploadedImageUrl = uploadJson.url || uploadJson.thumbnailUrl || "";
+          } else {
+            const errJson = await uploadRes.json();
+            console.warn("ImageKit upload error:", errJson);
+            showToast("Warning: ImageKit upload failed, saving order without image", "info");
+          }
+        } catch (uploadErr) {
+          console.error("Order image upload failed:", uploadErr);
+        } finally {
+          setIsUploadingImage(false);
+        }
+      }
+
       const sanitizedItems = selectedItems.map((item) => {
         const prod = productsList.find((p) => p.id === item.productId);
         return {
@@ -1109,6 +1166,7 @@ export default function OrdersPage() {
         deliveryDate: deliveryDate || "",
         deliveryTime: deliveryTime || "11:00 AM",
         packingDescription: (packingDescription || "").trim(),
+        imageUrl: uploadedImageUrl || "",
         items: sanitizedItems,
         subtotal: calculatedFinancials.displaySubtotal || 0,
         discount: calculatedFinancials.displayDiscount || 0,
@@ -1635,13 +1693,27 @@ export default function OrdersPage() {
                       />
                     </td>
 
-                    {/* Order Number with Inspect Link */}
+                    {/* Order Number with Inspect Link & Photo preview */}
                     <td className="px-3.5 py-2 font-mono text-[11px] text-slate-800 font-medium">
                       <div className="flex items-center justify-between gap-1.5">
-                        <span className="text-[#348bdd]">{o.orderNumber}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {o.imageUrl && (
+                            <img
+                              src={o.imageUrl}
+                              alt="Order photo"
+                              title="Click to view reference image"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedEnlargedImage(o.imageUrl!);
+                              }}
+                              className="w-5 h-5 rounded object-cover border border-slate-200 cursor-pointer shrink-0 hover:scale-125 transition-transform shadow-2xs"
+                            />
+                          )}
+                          <span className="text-[#348bdd] truncate">{o.orderNumber}</span>
+                        </div>
                         <button
                           onClick={() => handleOpenViewModal(o)}
-                          className="w-5 h-5 rounded flex items-center justify-center bg-slate-100 hover:bg-sky-50 text-slate-500 hover:text-[#348bdd] border border-slate-200/70 transition-colors cursor-pointer"
+                          className="w-5 h-5 rounded flex items-center justify-center bg-slate-100 hover:bg-sky-50 text-slate-500 hover:text-[#348bdd] border border-slate-200/70 transition-colors cursor-pointer shrink-0"
                           title="View order specification"
                         >
                           <ArrowRight size={11} />
@@ -2008,6 +2080,78 @@ export default function OrdersPage() {
                     className="w-full text-xs px-3 py-2 rounded-md border bg-white focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-primary)]"
                     style={{ borderColor: "var(--color-border-base)" }}
                   />
+                </div>
+
+                {/* Row 4: Customization & Reference Image Upload (ImageKit) */}
+                <div>
+                  <label className="block text-xs uppercase tracking-wider mb-1 font-medium text-slate-600">
+                    Order Reference / Custom Photo <span className="text-slate-400 font-normal lowercase">(optional - cake design, custom box, special tag)</span>
+                  </label>
+                  <div
+                    className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-2.5 rounded-lg border border-dashed bg-slate-50/60"
+                    style={{ borderColor: "var(--color-border-base)" }}
+                  >
+                    {orderImagePreview ? (
+                      <div className="relative group shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-slate-200 bg-white shadow-2xs">
+                        <img
+                          src={orderImagePreview}
+                          alt="Order Reference Preview"
+                          className="w-full h-full object-cover"
+                        />
+                        {modalMode !== "view" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOrderImageFile(null);
+                              setOrderImagePreview("");
+                            }}
+                            className="absolute inset-0 bg-black/60 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-medium cursor-pointer"
+                            title="Remove image"
+                          >
+                            <Trash2 size={14} className="mb-0.5 text-rose-300" />
+                            <span>Remove</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      modalMode !== "view" && (
+                        <label className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 hover:border-[#348bdd] hover:bg-sky-50/50 text-slate-700 hover:text-[#348bdd] text-xs font-medium cursor-pointer transition-all shadow-2xs shrink-0">
+                          <ImageIcon size={15} className="text-[#348bdd]" />
+                          <span>Choose Image</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleOrderImageSelect}
+                          />
+                        </label>
+                      )
+                    )}
+
+                    <div className="text-[11px] text-slate-500 flex-1 leading-snug">
+                      {orderImagePreview ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-700 font-medium flex items-center gap-1">
+                            <CheckCircle2 size={13} className="text-emerald-600" />
+                            Image Attached (Uploaded to ImageKit on save)
+                          </span>
+                          {modalMode !== "view" && (
+                            <label className="text-[#348bdd] hover:underline cursor-pointer text-xs font-medium ml-2">
+                              Change
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleOrderImageSelect}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      ) : (
+                        <span>Upload custom design or packing photo. This image will automatically be visible in the <strong>Manufacturing Portal</strong> & <strong>Packing Portal</strong>.</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2533,6 +2677,7 @@ export default function OrdersPage() {
         </div>
       )}
 
+
       {/* =========================================================================
           5. SUB-MODAL: WEIGHT / LITRE ITEM CUSTOMIZATION
          ========================================================================= */}
@@ -2729,6 +2874,7 @@ export default function OrdersPage() {
           </div>
         </div>
       )}
+
 
       {/* =========================================================================
           6. SUB-MODAL: QUICK ADD CUSTOMER
@@ -3116,6 +3262,36 @@ export default function OrdersPage() {
                 </div>
               )}
 
+              {/* Reference Image if present */}
+              {viewingOrder.imageUrl && (
+                <div className="p-3 rounded-lg border border-sky-100 bg-sky-50/40 text-xs flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={viewingOrder.imageUrl}
+                      alt="Order Customization Reference"
+                      className="w-14 h-14 rounded-lg object-cover border border-slate-200 bg-white shadow-2xs cursor-pointer hover:scale-105 transition-transform"
+                      onClick={() => setSelectedEnlargedImage(viewingOrder.imageUrl!)}
+                    />
+                    <div>
+                      <span className="font-medium text-slate-800 block text-xs">
+                        Custom Design / Reference Photo
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        ImageKit Cloud Synchronized
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEnlargedImage(viewingOrder.imageUrl!)}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-white border border-slate-200 hover:border-[#348bdd] text-[#348bdd] shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <ZoomIn size={13} />
+                    <span>View Photo</span>
+                  </button>
+                </div>
+              )}
+
               {/* Ordered Items Table */}
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2 font-mono flex items-center gap-1.5">
@@ -3387,6 +3563,7 @@ export default function OrdersPage() {
         </div>
       )}
 
+
       {/* =========================================================================
           9. PAYMENT MANAGEMENT & INSTALLMENT MODAL
          ========================================================================= */}
@@ -3654,6 +3831,7 @@ export default function OrdersPage() {
         </div>
       )}
 
+
       {/* =========================================================================
           8. POST ORDER CREATION PRINT PROMPT MODAL
          ========================================================================= */}
@@ -3715,6 +3893,7 @@ export default function OrdersPage() {
           </div>
         </div>
       )}
+
 
       {/* =========================================================================
           9. A4 TAX INVOICE PRINT MODAL
@@ -4086,6 +4265,36 @@ export default function OrdersPage() {
                   Authorized Signatory
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* Lightbox / Image Enlarge Preview Modal */}
+      {selectedEnlargedImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setSelectedEnlargedImage(null)}
+        >
+          <div
+            className="relative max-w-3xl max-h-[90vh] bg-white rounded-2xl overflow-hidden shadow-2xl p-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedEnlargedImage(null)}
+              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+            <img
+              src={selectedEnlargedImage}
+              alt="Enlarged Order Reference"
+              className="max-h-[82vh] w-auto max-w-full rounded-xl object-contain mx-auto"
+            />
+            <div className="text-center pt-2 pb-1 text-xs text-slate-500 font-medium">
+              Order Customization Reference Photo (ImageKit)
             </div>
           </div>
         </div>

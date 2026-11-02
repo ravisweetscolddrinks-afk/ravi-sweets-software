@@ -58,6 +58,7 @@ export interface OrderRecord {
   deliveryDate: string; // YYYY-MM-DD
   deliveryTime: string; // HH:MM AM/PM
   packingDescription: string;
+  imageUrl?: string; // Reference image uploaded to ImageKit
   items: OrderItem[];
   subtotal: number;
   discount: number;

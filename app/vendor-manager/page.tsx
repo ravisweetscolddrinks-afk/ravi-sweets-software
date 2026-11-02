@@ -2061,7 +2061,7 @@ function VendorManagerContent({
         title={editingVendor ? "Edit Vendor Details" : "Add New Vendor"}
         subtitle="Manage supplier profiles, contact information, and address details"
       >
-        <form onSubmit={handleSaveVendor} className="space-y-4 p-5">
+        <form onSubmit={handleSaveVendor} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">
               Vendor Name <span className="text-rose-500">*</span>
@@ -2175,7 +2175,7 @@ function VendorManagerContent({
         title={editingOrder ? `Edit Order: ${editingOrder.orderId}` : "Create Vendor Order"}
         subtitle="Select vendor and add items with quantity to generate a purchase order"
       >
-        <form onSubmit={handleSaveOrder} className="space-y-4 p-5">
+        <form onSubmit={handleSaveOrder} className="space-y-4">
           {/* Select Vendor */}
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -2322,7 +2322,7 @@ function VendorManagerContent({
         title={editingInvoice ? `Edit Invoice: ${editingInvoice.invoiceNumber}` : "Add Vendor Invoice & Due"}
         subtitle="Log vendor bill items, quantity, rate, amount paid, and remaining pending balance"
       >
-        <form onSubmit={handleSaveInvoice} className="space-y-4 p-5">
+        <form onSubmit={handleSaveInvoice} className="space-y-4">
           {/* Select Vendor */}
           <div>
             <div className="flex items-center justify-between mb-1">
