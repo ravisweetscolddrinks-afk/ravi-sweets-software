@@ -72,7 +72,9 @@ import {
   Image as ImageIcon,
   UploadCloud,
   ZoomIn,
+  Scale,
 } from "lucide-react";
+import { RoundoffRule, findMatchingRoundoffRule } from "@/types/roundoff";
 
 // --- TYPES ---
 export type OrderStatus =
@@ -107,6 +109,8 @@ export interface OrderItem {
   packingUnitName?: string;
   piecesPerKg?: number | string;
   status?: OrderStatus;
+  originalWeight?: number;
+  roundOffApplied?: boolean;
 }
 
 export interface SplitPaymentDetail {
@@ -239,6 +243,7 @@ export default function OrdersPage() {
   const [customersList, setCustomersList] = useState<CustomerOption[]>([]);
   const [storesList, setStoresList] = useState<StoreOption[]>([]);
   const [productsList, setProductsList] = useState<ProductCatalogItem[]>([]);
+  const [roundoffRules, setRoundoffRules] = useState<RoundoffRule[]>([]);
   const [productCatalogSearch, setProductCatalogSearch] = useState<string>("");
   const [gstConfig, setGstConfig] = useState<{
     enabled: boolean;
@@ -496,6 +501,19 @@ export default function OrdersPage() {
       (err) => console.warn("Realtime products error:", err)
     );
 
+    // Realtime Roundoff Rules Listener
+    const unsubRules = onSnapshot(
+      collection(db, "roundoff_rules"),
+      (snap) => {
+        const list: RoundoffRule[] = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<RoundoffRule, "id">),
+        }));
+        setRoundoffRules(list);
+      },
+      (err) => console.warn("Realtime roundoff error:", err)
+    );
+
     const today = new Date().toISOString().split("T")[0];
     setCurrentDateStr(today);
     setCustomStartDate(today);
@@ -510,6 +528,7 @@ export default function OrdersPage() {
       unsubCustomers();
       unsubStores();
       unsubProducts();
+      unsubRules();
     };
   }, []);
 
@@ -773,7 +792,9 @@ export default function OrdersPage() {
   const handleConfirmWeightItem = () => {
     if (!weightModalProduct || weightInput === "" || Number(weightInput) <= 0) return;
 
-    const weightVal = Number(weightInput);
+    const rawWeightVal = Number(weightInput);
+    const matchingRule = findMatchingRoundoffRule(roundoffRules, rawWeightVal, selectedStoreId);
+    const weightVal = matchingRule ? matchingRule.roundOffValue : rawWeightVal;
     const calculatedLineTotal = Number(
       (weightVal * weightModalProduct.amount).toFixed(2)
     );
@@ -786,6 +807,8 @@ export default function OrdersPage() {
             ? {
                 ...i,
                 quantity: weightVal,
+                originalWeight: matchingRule ? rawWeightVal : undefined,
+                roundOffApplied: !!matchingRule,
                 totalAmount: calculatedLineTotal,
                 manufacturingDescription: mfgDescInput.trim() || "",
               }
@@ -801,12 +824,21 @@ export default function OrdersPage() {
         unit: weightModalProduct.unit || "KG",
         rate: Number(weightModalProduct.amount) || 0,
         quantity: weightVal,
+        originalWeight: matchingRule ? rawWeightVal : undefined,
+        roundOffApplied: !!matchingRule,
         totalAmount: calculatedLineTotal,
         manufacturingDescription: mfgDescInput.trim() || "",
         imageUrl: weightModalProduct.imageUrl || "",
       };
 
       setSelectedItems((prev) => [...prev, newItem]);
+    }
+
+    if (matchingRule) {
+      showToast(
+        `Applied roundoff weight ${weightVal} KG for ${weightModalProduct.name} (entered: ${rawWeightVal} KG)`,
+        "info"
+      );
     }
 
     setWeightModalProduct(null);
@@ -1150,6 +1182,8 @@ export default function OrdersPage() {
           packingUnitName: item.packingUnitName || prod?.packingUnitName || "",
           piecesPerKg: item.piecesPerKg || prod?.piecesPerKg || "",
           status: item.status || "Created",
+          originalWeight: item.originalWeight || null,
+          roundOffApplied: !!item.roundOffApplied,
         };
       });
 
@@ -2321,6 +2355,12 @@ export default function OrdersPage() {
                             <div className="text-[10px] font-mono text-slate-400">
                               ₹{item.rate} / {item.unit}
                             </div>
+                            {item.roundOffApplied && (
+                              <div className="text-[10px] text-blue-600 font-mono flex items-center gap-1 font-medium mt-0.5">
+                                <Scale size={10} className="shrink-0 text-[#348bdd]" />
+                                <span>Roundoff: actual {item.originalWeight} KG</span>
+                              </div>
+                            )}
                           </div>
 
                           {/* Quantity control or weight display */}
@@ -2752,7 +2792,7 @@ export default function OrdersPage() {
                         setAmountInput("");
                       }
                     }}
-                    className="w-full text-xs bg-transparent focus:outline-none font-mono font-medium"
+                    className="w-full text-xs bg-transparent focus:outline-none font-mono font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <span className="text-xs font-mono text-slate-400 uppercase">
                     {weightModalProduct.unit}
@@ -2795,6 +2835,29 @@ export default function OrdersPage() {
                   ))}
                 </div>
               </div>
+
+              {/* Live Roundoff Indicator */}
+              {(() => {
+                const rule = findMatchingRoundoffRule(
+                  roundoffRules,
+                  weightInput === "" ? 0 : Number(weightInput),
+                  selectedStoreId
+                );
+                if (!rule) return null;
+                return (
+                  <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-950 text-xs flex items-center justify-between gap-2 animate-in fade-in duration-150">
+                    <div className="flex items-center gap-1.5 font-medium">
+                      <Scale size={14} className="text-[#348bdd] shrink-0" />
+                      <span>
+                        Roundoff ({rule.fromWeight} - {rule.toWeight} KG):
+                      </span>
+                    </div>
+                    <span className="font-mono font-bold text-xs bg-white px-2 py-0.5 rounded border border-blue-300 text-[#348bdd]">
+                      ➔ {rule.roundOffValue} KG
+                    </span>
+                  </div>
+                );
+              })()}
 
               {/* Amount Field (Bidirectional Calculation) */}
               <div>

@@ -45,7 +45,9 @@ import {
   FolderOpen,
   ArrowRight,
   Sparkles,
+  Scale,
 } from "lucide-react";
+import { RoundoffRule, findMatchingRoundoffRule } from "@/types/roundoff";
 
 interface ProductCatalogItem {
   id: string;
@@ -67,6 +69,8 @@ interface PosCartLine {
   unit: string;
   rate: number;
   quantity: number;
+  originalWeight?: number;
+  roundOffApplied?: boolean;
   totalAmount: number;
   imageUrl?: string;
   piecesPerKg?: number | string;
@@ -115,6 +119,7 @@ export default function PosBillingPage() {
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [draftedBills, setDraftedBills] = useState<DraftedBill[]>([]);
+  const [roundoffRules, setRoundoffRules] = useState<RoundoffRule[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
   const [gstConfig, setGstConfig] = useState<{ enabled: boolean; percentage: number; pricingType: "inclusive" | "exclusive" }>({
     enabled: true,
@@ -257,12 +262,26 @@ export default function PosBillingPage() {
       (err) => console.warn("GST error:", err)
     );
 
+    // Roundoff Rules Listener
+    const unsubRules = onSnapshot(
+      collection(db, "roundoff_rules"),
+      (snap) => {
+        const list: RoundoffRule[] = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<RoundoffRule, "id">),
+        }));
+        setRoundoffRules(list);
+      },
+      (err) => console.warn("Roundoff rules error:", err)
+    );
+
     return () => {
       unsubProducts();
       unsubStores();
       unsubCustomers();
       unsubDrafts();
       unsubGst();
+      unsubRules();
     };
   }, [selectedStoreId]);
 
@@ -497,14 +516,19 @@ export default function PosBillingPage() {
           return;
         }
 
-        const lineAmt = Number((weightInKg * matched.amount).toFixed(2));
+        const rawWeight = weightInKg;
+        const matchingRule = findMatchingRoundoffRule(roundoffRules, rawWeight, selectedStoreId);
+        const finalWeight = matchingRule ? matchingRule.roundOffValue : rawWeight;
+        const lineAmt = Number((finalWeight * matched.amount).toFixed(2));
         const newLine: PosCartLine = {
           lineId: `pos_wt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           productId: matched.id,
           name: matched.name,
           unit: matched.unit || "KG",
           rate: matched.amount,
-          quantity: weightInKg,
+          quantity: finalWeight,
+          originalWeight: matchingRule ? rawWeight : undefined,
+          roundOffApplied: !!matchingRule,
           totalAmount: lineAmt,
           imageUrl: matched.imageUrl,
           piecesPerKg: matched.piecesPerKg,
@@ -512,7 +536,14 @@ export default function PosBillingPage() {
         };
 
         setCart((prev) => [...prev, newLine]);
-        showToast(`Added ${matched.name} (${weightInKg} ${matched.unit}) - ₹${lineAmt}`, "success");
+        if (matchingRule) {
+          showToast(
+            `Added ${matched.name} with roundoff weight ${finalWeight} KG (actual: ${rawWeight} KG) - ₹${lineAmt}`,
+            "success"
+          );
+        } else {
+          showToast(`Added ${matched.name} (${finalWeight} ${matched.unit}) - ₹${lineAmt}`, "success");
+        }
         setSearchBarcode("");
       } else {
         // No quantity provided: open weight customization modal
@@ -575,7 +606,9 @@ export default function PosBillingPage() {
   const handleConfirmWeightItem = () => {
     if (!weightModalProduct || Number(weightInput) <= 0) return;
 
-    const qty = Number(weightInput);
+    const rawQty = Number(weightInput);
+    const matchingRule = findMatchingRoundoffRule(roundoffRules, rawQty, selectedStoreId);
+    const qty = matchingRule ? matchingRule.roundOffValue : rawQty;
     const lineAmt = Number((qty * weightModalProduct.amount).toFixed(2));
 
     if (editingLineId) {
@@ -583,7 +616,13 @@ export default function PosBillingPage() {
       setCart((prev) =>
         prev.map((i) =>
           i.lineId === editingLineId
-            ? { ...i, quantity: qty, totalAmount: lineAmt }
+            ? {
+                ...i,
+                quantity: qty,
+                originalWeight: matchingRule ? rawQty : undefined,
+                roundOffApplied: !!matchingRule,
+                totalAmount: lineAmt,
+              }
             : i
         )
       );
@@ -596,12 +635,21 @@ export default function PosBillingPage() {
         unit: weightModalProduct.unit || "KG",
         rate: weightModalProduct.amount,
         quantity: qty,
+        originalWeight: matchingRule ? rawQty : undefined,
+        roundOffApplied: !!matchingRule,
         totalAmount: lineAmt,
         imageUrl: weightModalProduct.imageUrl,
         piecesPerKg: weightModalProduct.piecesPerKg,
         kgPerTray: weightModalProduct.kgPerTray,
       };
       setCart((prev) => [...prev, newLine]);
+    }
+
+    if (matchingRule) {
+      showToast(
+        `Applied roundoff weight ${qty} KG for ${weightModalProduct.name} (scale: ${rawQty} KG)`,
+        "info"
+      );
     }
 
     setIsWeightModalOpen(false);
@@ -1241,6 +1289,12 @@ export default function PosBillingPage() {
                       <div className="text-[10px] text-slate-400 font-mono">
                         ₹{line.rate} / {line.unit}
                       </div>
+                      {line.roundOffApplied && (
+                        <div className="text-[10px] text-blue-600 font-mono flex items-center gap-1 font-medium mt-0.5">
+                          <Scale size={10} className="shrink-0 text-[#348bdd]" />
+                          <span>Roundoff: actual {line.originalWeight} KG</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Quantity Adjustment Controls */}
@@ -1493,9 +1547,29 @@ export default function PosBillingPage() {
                     setAmountInput(Number((Number(val) * weightModalProduct.amount).toFixed(2)));
                   }
                 }}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg font-mono text-sm focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                onWheel={(e) => e.currentTarget.blur()}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg font-mono text-sm focus:outline-none focus:ring-1 focus:ring-[#348bdd] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
+
+            {/* Live Roundoff Indicator */}
+            {(() => {
+              const rule = findMatchingRoundoffRule(roundoffRules, Number(weightInput), selectedStoreId);
+              if (!rule) return null;
+              return (
+                <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-950 text-xs flex items-center justify-between gap-2 animate-in fade-in duration-150">
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <Scale size={14} className="text-[#348bdd] shrink-0" />
+                    <span>
+                      Roundoff ({rule.fromWeight} - {rule.toWeight} KG):
+                    </span>
+                  </div>
+                  <span className="font-mono font-bold text-xs bg-white px-2 py-0.5 rounded border border-blue-300 text-[#348bdd]">
+                    ➔ {rule.roundOffValue} KG
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* Amount Input (Auto-calculated or reverse updates weight) */}
             <div>
@@ -1514,7 +1588,8 @@ export default function PosBillingPage() {
                     setWeightInput(Number((Number(amt) / weightModalProduct.amount).toFixed(3)));
                   }
                 }}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg font-mono text-sm focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                onWheel={(e) => e.currentTarget.blur()}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg font-mono text-sm focus:outline-none focus:ring-1 focus:ring-[#348bdd] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
 

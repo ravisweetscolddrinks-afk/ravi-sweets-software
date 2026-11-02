@@ -30,6 +30,8 @@ export interface OrderItem {
   packingUnitName?: string;
   piecesPerKg?: number | string;
   status?: OrderStatus;
+  originalWeight?: number;
+  roundOffApplied?: boolean;
 }
 
 export interface SplitPaymentDetail {

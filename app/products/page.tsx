@@ -23,6 +23,7 @@ import ViewDetailsModal from "@/components/ViewDetailsModal";
 import SearchableSelect from "@/components/SearchableSelect";
 import * as XLSX from "xlsx";
 import { SAMPLE_80_PRODUCTS } from "./sampleProductsData";
+import RoundoffLogicTab from "./RoundoffLogicTab";
 import {
   Plus,
   Search,
@@ -48,6 +49,7 @@ import {
   CheckCircle2,
   AlertCircle,
   FileUp,
+  Scale,
 } from "lucide-react";
 
 export interface ProductItem {
@@ -69,6 +71,7 @@ export interface ProductItem {
   kgPerTray?: number | string;
   isFavourite?: boolean;
   showInWorksheet?: boolean;
+  hasRoundOff?: boolean;
   createdAt?: any;
 }
 
@@ -108,6 +111,7 @@ export default function ProductsPage() {
   const { showToast } = useToast();
 
   // State
+  const [activeMainTab, setActiveMainTab] = useState<"catalog" | "roundoff">("catalog");
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -919,46 +923,99 @@ export default function ProductsPage() {
           </p>
         </div>
 
-        {/* Actions: Refresh, Bulk Upload & Add Product Button */}
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={fetchProductsData}
-            title="Refresh list"
-            disabled={isLoading}
-            className="p-2 rounded-md border bg-white hover:bg-slate-50 transition-colors disabled:opacity-50 cursor-pointer"
-            style={{
-              borderColor: "var(--color-border-base)",
-              color: "var(--color-text-secondary)",
-            }}
-          >
-            <RotateCw size={15} className={isLoading ? "animate-spin" : ""} />
-          </button>
+        {/* Actions: Refresh, Bulk Upload & Add Product Button (Catalog Only) */}
+        {activeMainTab === "catalog" && (
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={fetchProductsData}
+              title="Refresh list"
+              disabled={isLoading}
+              className="p-2 rounded-md border bg-white hover:bg-slate-50 transition-colors disabled:opacity-50 cursor-pointer"
+              style={{
+                borderColor: "var(--color-border-base)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              <RotateCw size={15} className={isLoading ? "animate-spin" : ""} />
+            </button>
 
-          <button
-            onClick={() => {
-              setBulkFileName("");
-              setParsedProducts([]);
-              setIsBulkModalOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-md border font-normal cursor-pointer bg-white hover:bg-slate-50 transition-colors shadow-2xs border-slate-200 text-slate-700"
-            title="Bulk Upload Products via Excel"
-          >
-            <FileSpreadsheet size={14} className="text-emerald-600" />
-            <span>Bulk Upload</span>
-          </button>
+            <button
+              onClick={() => {
+                setBulkFileName("");
+                setParsedProducts([]);
+                setIsBulkModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-md border font-normal cursor-pointer bg-white hover:bg-slate-50 transition-colors shadow-2xs border-slate-200 text-slate-700"
+              title="Bulk Upload Products via Excel"
+            >
+              <FileSpreadsheet size={14} className="text-emerald-600" />
+              <span>Bulk Upload</span>
+            </button>
 
-          <button
-            onClick={handleOpenAdd}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs rounded-md text-white transition-opacity hover:opacity-90 font-normal shadow-xs cursor-pointer"
-            style={{ backgroundColor: "var(--color-brand-primary)" }}
-          >
-            <Plus size={15} />
-            <span>Add Product</span>
-          </button>
-        </div>
+            <button
+              onClick={handleOpenAdd}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs rounded-md text-white transition-opacity hover:opacity-90 font-normal shadow-xs cursor-pointer"
+              style={{ backgroundColor: "var(--color-brand-primary)" }}
+            >
+              <Plus size={15} />
+              <span>Add Product</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Search and Filters Toolbar */}
+      {/* Main Page Navigation Tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setActiveMainTab("catalog")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
+            activeMainTab === "catalog"
+              ? "border-[#348bdd] text-[#348bdd] font-semibold"
+              : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+          }`}
+        >
+          <Package size={16} />
+          <span>Products Catalog</span>
+          <span
+            className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+              activeMainTab === "catalog"
+                ? "bg-blue-100 text-[#348bdd]"
+                : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {totalCount}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveMainTab("roundoff")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
+            activeMainTab === "roundoff"
+              ? "border-[#348bdd] text-[#348bdd] font-semibold"
+              : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+          }`}
+        >
+          <Scale size={16} />
+          <span>Roundoff Logic</span>
+          <span
+            className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+              activeMainTab === "roundoff"
+                ? "bg-blue-100 text-[#348bdd]"
+                : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            Tolerance & Scale
+          </span>
+        </button>
+      </div>
+
+      {activeMainTab === "roundoff" ? (
+        <RoundoffLogicTab />
+      ) : (
+        <>
+          {/* Search and Filters Toolbar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
         <div
           className="flex items-center gap-2 px-3 py-1.5 rounded-md border w-full sm:w-80 bg-white"
@@ -1361,6 +1418,8 @@ export default function ProductsPage() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Offcanvas Drawer for Add / Edit Product */}
       <OffcanvasDrawer
