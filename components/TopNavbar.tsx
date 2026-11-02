@@ -20,8 +20,14 @@ import {
   Printer,
   PanelLeftClose,
   PanelLeftOpen,
+  LogOut,
+  ShieldCheck,
+  UserCog,
+  Download,
 } from "lucide-react";
 import { usePrinter } from "@/context/PrinterContext";
+import { useAuth } from "@/context/AuthContext";
+import { usePWA } from "@/context/PWAContext";
 
 interface TopNavbarProps {
   onToggleMobileMenu?: () => void;
@@ -37,6 +43,8 @@ export default function TopNavbar({
   onToggleSidebarCollapse,
 }: TopNavbarProps) {
   const { settings, setIsConnectModalOpen } = usePrinter();
+  const { currentUser, logout } = useAuth();
+  const { isInstallable, isInstalled, installApp } = usePWA();
 
   return (
     <header
@@ -168,31 +176,68 @@ export default function TopNavbar({
         </button>
       </div>
 
-      {/* Right side: Tools, Search, User */}
-      <div className="flex items-center gap-2.5 shrink-0 text-xs">
-        {/* Settings Shortcut Link */}
-        <Link
-          href="/settings"
-          className="p-1.5 rounded-md hover:bg-slate-100 transition-colors text-slate-500 hover:text-slate-800 border border-transparent hover:border-slate-200 cursor-pointer flex items-center gap-1.5"
-          title="Settings (Profile & GST)"
-        >
-          <SettingsIcon size={16} />
-          <span className="hidden sm:inline text-xs font-normal text-slate-600">Settings</span>
-        </Link>
+      {/* Right side: Tools, Search, User, PWA Install & Logout */}
+      <div className="flex items-center gap-2 shrink-0 text-xs">
+        {/* PWA Install Button if available */}
+        {isInstallable && !isInstalled && (
+          <button
+            type="button"
+            onClick={installApp}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-sky-50 text-[#348bdd] border border-sky-200 hover:bg-sky-100 transition-colors shadow-2xs cursor-pointer"
+            title="Install Ravi Sweets Software as Desktop/Mobile App"
+          >
+            <Download size={12} />
+            <span className="hidden sm:inline">Install App</span>
+          </button>
+        )}
 
-        {/* User Profile Avatar */}
-        <Link
-          href="/settings"
-          className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-normal cursor-pointer border hover:ring-2 hover:ring-[var(--color-brand-primary)] transition-all"
+        {/* Settings Shortcut Link (Only for Admin) */}
+        {currentUser?.role === "admin" && (
+          <Link
+            href="/settings"
+            className="p-1.5 rounded-md hover:bg-slate-100 transition-colors text-slate-500 hover:text-slate-800 border border-transparent hover:border-slate-200 cursor-pointer flex items-center gap-1.5"
+            title="Settings (Profile & GST)"
+          >
+            <SettingsIcon size={16} />
+            <span className="hidden md:inline text-xs font-normal text-slate-600">Settings</span>
+          </Link>
+        )}
+
+        {/* User Identity Chip */}
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border"
           style={{
-            backgroundColor: "var(--color-bg-hover)",
-            borderColor: "var(--color-border-base)",
-            color: "var(--color-text-primary)",
+            backgroundColor: currentUser?.role === "admin" ? "#f0f7fe" : "#f0fdf4",
+            borderColor: currentUser?.role === "admin" ? "#b8daf7" : "#bbf7d0",
+            color: currentUser?.role === "admin" ? "#1d5f9f" : "#166534",
           }}
-          title="Ravi Sweets Profile & Settings"
+          title={
+            currentUser?.role === "admin"
+              ? `Super Admin: ${currentUser.email}`
+              : `Staff: ${currentUser?.name} (${(currentUser as any)?.mobile})`
+          }
         >
-          RS
-        </Link>
+          {currentUser?.role === "admin" ? (
+            <ShieldCheck size={13} className="text-[#348bdd] shrink-0" />
+          ) : (
+            <UserCog size={13} className="text-emerald-600 shrink-0" />
+          )}
+          <span className="font-medium max-w-[120px] truncate">
+            {currentUser?.role === "admin"
+              ? "Super Admin"
+              : currentUser?.name || "Staff"}
+          </span>
+        </div>
+
+        {/* Sign Out Button */}
+        <button
+          type="button"
+          onClick={logout}
+          title="Sign Out"
+          className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer border border-transparent hover:border-rose-100"
+        >
+          <LogOut size={16} />
+        </button>
       </div>
     </header>
   );

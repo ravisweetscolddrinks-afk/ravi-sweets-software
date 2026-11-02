@@ -1,15 +1,21 @@
 "use client";
 
 import React, { useState } from "react";
+import { usePathname } from "next/navigation";
 import TopNavbar from "./TopNavbar";
 import Sidebar from "./Sidebar";
 import { ToastProvider } from "./ToastProvider";
 import { PrinterProvider } from "@/context/PrinterContext";
+import { AuthProvider } from "@/context/AuthContext";
+import { PWAProvider } from "@/context/PWAContext";
+import AuthGuard from "./AuthGuard";
 import PrinterModal from "./PrinterModal";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const isLoginPage = pathname === "/login";
 
   React.useEffect(() => {
     try {
@@ -57,35 +63,50 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ToastProvider>
-      <PrinterProvider>
-        <div className="min-h-screen flex flex-col" style={{ backgroundColor: "var(--color-bg-canvas)" }}>
-        {/* Top Navbar */}
-        <TopNavbar
-          onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          isMobileMenuOpen={isMobileMenuOpen}
-          isSidebarCollapsed={isSidebarCollapsed}
-          onToggleSidebarCollapse={handleToggleSidebarCollapse}
-        />
+    <PWAProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <PrinterProvider>
+            <AuthGuard>
+              {isLoginPage ? (
+                <main className="min-h-screen w-full">
+                  {children}
+                </main>
+              ) : (
+                <div
+                  className="min-h-screen flex flex-col"
+                  style={{ backgroundColor: "var(--color-bg-canvas)" }}
+                >
+                  {/* Top Navbar */}
+                  <TopNavbar
+                    onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                    isMobileMenuOpen={isMobileMenuOpen}
+                    isSidebarCollapsed={isSidebarCollapsed}
+                    onToggleSidebarCollapse={handleToggleSidebarCollapse}
+                  />
 
-        {/* Main Layout Area */}
-        <div className="flex flex-1 w-full relative">
-          <Sidebar
-            isMobileOpen={isMobileMenuOpen}
-            onCloseMobile={() => setIsMobileMenuOpen(false)}
-            isCollapsed={isSidebarCollapsed}
-            onToggleCollapse={handleToggleSidebarCollapse}
-          />
+                  {/* Main Layout Area */}
+                  <div className="flex flex-1 w-full relative">
+                    <Sidebar
+                      isMobileOpen={isMobileMenuOpen}
+                      onCloseMobile={() => setIsMobileMenuOpen(false)}
+                      isCollapsed={isSidebarCollapsed}
+                      onToggleCollapse={handleToggleSidebarCollapse}
+                    />
 
-          <main className="flex-1 min-w-0 w-full overflow-x-hidden min-h-[calc(100vh-3.5rem)] transition-all duration-200">
-            {children}
-          </main>
-        </div>
+                    <main className="flex-1 min-w-0 w-full overflow-x-hidden min-h-[calc(100vh-3.5rem)] transition-all duration-200">
+                      {children}
+                    </main>
+                  </div>
 
-        {/* Global Thermal Printer Configuration Modal */}
-        <PrinterModal />
-        </div>
-      </PrinterProvider>
-    </ToastProvider>
+                  {/* Global Thermal Printer Configuration Modal */}
+                  <PrinterModal />
+                </div>
+              )}
+            </AuthGuard>
+          </PrinterProvider>
+        </ToastProvider>
+      </AuthProvider>
+    </PWAProvider>
   );
 }

@@ -25,7 +25,10 @@ import {
   UserCog,
   PanelLeftClose,
   PanelLeftOpen,
+  LogOut,
+  ShieldCheck,
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 export interface NavItem {
   name: string;
@@ -171,12 +174,22 @@ export default function Sidebar({
   onToggleCollapse,
 }: SidebarProps) {
   const pathname = usePathname();
+  const { currentUser, canAccess, logout } = useAuth();
   const [hoveredItem, setHoveredItem] = React.useState<{
     name: string;
     category?: string;
     top: number;
     left: number;
   } | null>(null);
+
+  const visibleItems = React.useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === "admin") return SIDEBAR_ITEMS;
+
+    return SIDEBAR_ITEMS.filter((item) => {
+      return canAccess(item.href);
+    });
+  }, [currentUser, canAccess]);
 
   const isItemActive = (item: NavItem) => {
     if (pathname === item.href) return true;
@@ -244,7 +257,7 @@ export default function Sidebar({
 
         {/* Navigation List */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col py-2 px-2 space-y-0.5">
-          {SIDEBAR_ITEMS.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon;
             const active = isItemActive(item);
 
@@ -320,41 +333,58 @@ export default function Sidebar({
           })}
         </div>
 
-        {/* Footer info in sidebar */}
+        {/* User Card & Logout in Sidebar Footer */}
         {!isCollapsed ? (
-          <div
-            className="mt-auto p-2.5 m-2 rounded-lg border text-[11px] shrink-0"
-            style={{
-              backgroundColor: "var(--color-bg-subtle)",
-              borderColor: "var(--color-border-subtle)",
-              color: "var(--color-text-muted)",
-            }}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] tracking-wider uppercase">System</span>
-              <span
-                className="text-[10px] px-1 py-0.2 rounded font-medium"
-                style={{
-                  backgroundColor: "var(--color-brand-primary-light)",
-                  color: "var(--color-brand-primary-text)",
-                }}
+          <div className="mt-auto p-2 m-2 rounded-xl border border-slate-200 bg-slate-50/80 text-xs shrink-0 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                    currentUser?.role === "admin"
+                      ? "bg-sky-100 text-[#348bdd]"
+                      : "bg-emerald-100 text-emerald-700"
+                  }`}
+                >
+                  {currentUser?.role === "admin" ? (
+                    <ShieldCheck size={16} />
+                  ) : (
+                    <UserCog size={16} />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="font-medium text-slate-800 truncate text-[12px]">
+                    {currentUser?.role === "admin"
+                      ? currentUser.displayName || "Super Admin"
+                      : currentUser?.name || "Staff"}
+                  </div>
+                  <div className="text-[10px] text-slate-500 truncate">
+                    {currentUser?.role === "admin"
+                      ? "Super Admin"
+                      : (currentUser as any)?.roleTitle || (currentUser as any)?.mobile || "Staff"}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={logout}
+                title="Sign Out"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
               >
-                v1.0.0
-              </span>
-            </div>
-            <div
-              className="truncate font-normal"
-              style={{ color: "var(--color-text-secondary)" }}
-            >
-              Ravi Sweets Live Console
+                <LogOut size={14} />
+              </button>
             </div>
           </div>
         ) : (
-          <div
-            className="mt-auto p-2.5 mb-2 flex justify-center text-[10px] text-slate-400 shrink-0"
-            title="Ravi Sweets v1.0.0 (Live)"
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <div className="mt-auto p-2 mb-2 flex flex-col items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={logout}
+              title={`Sign Out (${currentUser?.role === "admin" ? "Admin" : (currentUser as any)?.name})`}
+              className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+            >
+              <LogOut size={16} />
+            </button>
           </div>
         )}
       </aside>
