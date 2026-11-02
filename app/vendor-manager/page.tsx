@@ -20,6 +20,7 @@ import OffcanvasDrawer from "@/components/OffcanvasDrawer";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import ViewDetailsModal, { FieldItem } from "@/components/ViewDetailsModal";
 import SearchableSelect, { SelectOption } from "@/components/SearchableSelect";
+import CustomDatePicker from "@/components/CustomDatePicker";
 import {
   Truck,
   Plus,
@@ -529,6 +530,7 @@ function VendorManagerContent({
   const [payingInvoice, setPayingInvoice] = useState<VendorInvoiceItem | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMode, setPaymentMode] = useState<"Cash" | "UPI" | "Bank Transfer" | "Cheque">("Cash");
+  const [paymentDate, setPaymentDate] = useState<string>(getTodayStr());
   const [paymentNote, setPaymentNote] = useState<string>("");
 
   // 5. Delete & View Modals
@@ -930,6 +932,7 @@ function VendorManagerContent({
     setPayingInvoice(inv);
     setPaymentAmount(inv.pendingAmount);
     setPaymentMode("Cash");
+    setPaymentDate(getTodayStr());
     setPaymentNote("");
   };
 
@@ -949,7 +952,7 @@ function VendorManagerContent({
     const newPaymentRecord: PaymentRecord = {
       id: String(Date.now()),
       amount: paymentAmount,
-      date: getTodayStr(),
+      date: paymentDate || getTodayStr(),
       mode: paymentMode,
       note: paymentNote.trim(),
     };
@@ -1253,20 +1256,20 @@ function VendorManagerContent({
 
             {/* Custom Date Pickers (Shown if "custom" is selected) */}
             {orderDateFilter === "custom" && (
-              <div className="flex items-center gap-2 p-2.5 bg-sky-50/60 rounded-lg border border-sky-100 text-xs text-sky-900 animate-in fade-in">
+              <div className="flex items-center gap-2 p-2 bg-sky-50/60 rounded-lg border border-sky-100 text-xs text-sky-900 animate-in fade-in">
                 <span className="font-medium text-xs">From:</span>
-                <input
-                  type="date"
+                <CustomDatePicker
                   value={orderCustomFrom}
-                  onChange={(e) => setOrderCustomFrom(e.target.value)}
-                  className="px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800"
+                  onChange={setOrderCustomFrom}
+                  compact
+                  placeholder="From date"
                 />
-                <span className="font-medium text-xs ml-2">To:</span>
-                <input
-                  type="date"
+                <span className="font-medium text-xs ml-1">To:</span>
+                <CustomDatePicker
                   value={orderCustomTo}
-                  onChange={(e) => setOrderCustomTo(e.target.value)}
-                  className="px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800"
+                  onChange={setOrderCustomTo}
+                  compact
+                  placeholder="To date"
                 />
               </div>
             )}
@@ -2199,12 +2202,10 @@ function VendorManagerContent({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Order Date</label>
-              <input
-                type="date"
-                required
+              <CustomDatePicker
                 value={orderFormData.orderDate}
-                onChange={(e) => setOrderFormData({ ...orderFormData, orderDate: e.target.value })}
-                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:border-[#348bdd] text-slate-800"
+                onChange={(d) => setOrderFormData({ ...orderFormData, orderDate: d })}
+                placeholder="Select order date"
               />
             </div>
             <div>
@@ -2363,14 +2364,12 @@ function VendorManagerContent({
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Invoice Date</label>
-              <input
-                type="date"
-                required
+              <CustomDatePicker
                 value={invoiceFormData.invoiceDate}
-                onChange={(e) =>
-                  setInvoiceFormData({ ...invoiceFormData, invoiceDate: e.target.value })
+                onChange={(d) =>
+                  setInvoiceFormData({ ...invoiceFormData, invoiceDate: d })
                 }
-                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:border-[#348bdd] text-slate-800"
+                placeholder="Select invoice date"
               />
             </div>
           </div>
@@ -2687,10 +2686,10 @@ function VendorManagerContent({
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Payment Date
                   </label>
-                  <input
-                    type="date"
-                    defaultValue={getTodayStr()}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none text-slate-800"
+                  <CustomDatePicker
+                    value={paymentDate}
+                    onChange={setPaymentDate}
+                    placeholder="Select payment date"
                   />
                 </div>
               </div>

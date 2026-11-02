@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
+import CustomDatePicker from "@/components/CustomDatePicker";
 import {
   Wallet,
   Calendar,
@@ -465,23 +466,21 @@ export default function PayrollPage() {
           </select>
 
           {/* Explicit Start Date and End Date Range */}
-          <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-md shadow-2xs text-xs">
+          <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2 py-0.5 rounded-md shadow-2xs text-xs">
             <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">From</span>
-            <input
-              type="date"
+            <CustomDatePicker
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="text-xs font-mono font-medium text-slate-800 bg-transparent focus:outline-none cursor-pointer"
-              title="Start Date"
+              onChange={setStartDate}
+              compact
+              placeholder="Start Date"
             />
             <span className="text-slate-300">→</span>
             <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">To</span>
-            <input
-              type="date"
+            <CustomDatePicker
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="text-xs font-mono font-medium text-slate-800 bg-transparent focus:outline-none cursor-pointer"
-              title="End Date"
+              onChange={setEndDate}
+              compact
+              placeholder="End Date"
             />
             <span className="text-[10px] font-mono px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded font-medium">
               {totalPeriodDays}d

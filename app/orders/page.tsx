@@ -21,6 +21,8 @@ import { useToast } from "@/components/ToastProvider";
 import { usePrinter } from "@/context/PrinterContext";
 import SearchableSelect from "@/components/SearchableSelect";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import CustomDatePicker from "@/components/CustomDatePicker";
+import CustomTimePicker from "@/components/CustomTimePicker";
 import {
   Plus,
   Search,
@@ -1427,20 +1429,18 @@ export default function OrdersPage() {
           {/* Custom Date Pickers */}
           {dateFilter === "custom" && (
             <div className="flex items-center gap-1.5 text-xs">
-              <input
-                type="date"
+              <CustomDatePicker
                 value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="px-2 py-1 border rounded-md text-xs bg-white text-slate-700"
-                style={{ borderColor: "var(--color-border-base)" }}
+                onChange={setCustomStartDate}
+                compact
+                placeholder="From date"
               />
               <span className="text-slate-400">to</span>
-              <input
-                type="date"
+              <CustomDatePicker
                 value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="px-2 py-1 border rounded-md text-xs bg-white text-slate-700"
-                style={{ borderColor: "var(--color-border-base)" }}
+                onChange={setCustomEndDate}
+                compact
+                placeholder="To date"
               />
             </div>
           )}
@@ -1969,19 +1969,12 @@ export default function OrdersPage() {
                     <label className="block text-xs uppercase tracking-wider mb-1 font-medium text-slate-600">
                       Delivery Date <span className="text-red-500">*</span>
                     </label>
-                    <div
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-md border bg-white focus-within:ring-1 focus-within:ring-[var(--color-brand-primary)]"
-                      style={{ borderColor: "var(--color-border-base)" }}
-                    >
-                      <Calendar size={14} className="text-slate-400 shrink-0" />
-                      <input
-                        type="date"
-                        value={deliveryDate}
-                        disabled={modalMode === "view"}
-                        onChange={(e) => setDeliveryDate(e.target.value)}
-                        className="w-full text-xs bg-transparent focus:outline-none"
-                      />
-                    </div>
+                    <CustomDatePicker
+                      value={deliveryDate}
+                      disabled={modalMode === "view"}
+                      onChange={setDeliveryDate}
+                      placeholder="Select delivery date"
+                    />
                   </div>
 
                   {/* Delivery Time */}
@@ -1989,20 +1982,12 @@ export default function OrdersPage() {
                     <label className="block text-xs uppercase tracking-wider mb-1 font-medium text-slate-600">
                       Delivery Time
                     </label>
-                    <div
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-md border bg-white focus-within:ring-1 focus-within:ring-[var(--color-brand-primary)]"
-                      style={{ borderColor: "var(--color-border-base)" }}
-                    >
-                      <Clock size={14} className="text-slate-400 shrink-0" />
-                      <input
-                        type="text"
-                        placeholder="e.g. 11:00 AM"
-                        value={deliveryTime}
-                        disabled={modalMode === "view"}
-                        onChange={(e) => setDeliveryTime(e.target.value)}
-                        className="w-full text-xs bg-transparent focus:outline-none font-mono"
-                      />
-                    </div>
+                    <CustomTimePicker
+                      value={deliveryTime}
+                      disabled={modalMode === "view"}
+                      onChange={setDeliveryTime}
+                      placeholder="Select delivery time"
+                    />
                   </div>
                 </div>
 

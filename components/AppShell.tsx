@@ -22,6 +22,30 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Prevent mouse wheel from incrementing or decrementing number inputs app-wide
+  React.useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      const activeEl = document.activeElement;
+      const target = e.target;
+      if (
+        (target instanceof HTMLInputElement && target.type === "number") ||
+        (activeEl instanceof HTMLInputElement && activeEl.type === "number")
+      ) {
+        if (target instanceof HTMLInputElement && target.type === "number") {
+          e.preventDefault();
+          target.blur();
+        } else if (activeEl instanceof HTMLInputElement && activeEl.type === "number") {
+          activeEl.blur();
+        }
+      }
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+    };
+  }, []);
+
   const handleToggleSidebarCollapse = () => {
     setIsSidebarCollapsed((prev) => {
       const next = !prev;

@@ -8,6 +8,7 @@ interface OffcanvasDrawerProps {
   onClose: () => void;
   title: string;
   subtitle?: string;
+  width?: string;
   children: React.ReactNode;
 }
 
@@ -16,6 +17,7 @@ export default function OffcanvasDrawer({
   onClose,
   title,
   subtitle,
+  width = "max-w-md",
   children,
 }: OffcanvasDrawerProps) {
   // Prevent body scrolling when drawer is open
@@ -43,7 +45,7 @@ export default function OffcanvasDrawer({
       {/* Slide-over Panel from Right */}
       <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
         <div
-          className="w-screen max-w-md bg-white border-l shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out"
+          className={`w-screen ${width} bg-white border-l shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out`}
           style={{
             borderColor: "var(--color-border-base)",
             backgroundColor: "var(--color-bg-surface)",

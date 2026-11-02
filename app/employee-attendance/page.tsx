@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
+import CustomDatePicker from "@/components/CustomDatePicker";
 import {
   CalendarCheck,
   Calendar,
@@ -339,18 +340,13 @@ export default function EmployeeAttendancePage() {
               <ChevronLeft size={15} />
             </button>
 
-            <div
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border bg-white"
-              style={{ borderColor: "var(--color-border-base)" }}
-            >
-              <Calendar size={13} className="text-slate-400" />
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="text-xs font-mono font-medium text-slate-800 bg-transparent focus:outline-none cursor-pointer"
-              />
-            </div>
+            <CustomDatePicker
+              value={selectedDate}
+              onChange={setSelectedDate}
+              compact
+              clearable={false}
+              placeholder="Select date"
+            />
 
             <button
               onClick={() => handleDateOffset(1)}

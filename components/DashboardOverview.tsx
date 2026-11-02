@@ -9,6 +9,7 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import CustomDatePicker from "./CustomDatePicker";
 import {
   TrendingUp,
   TrendingDown,
@@ -544,21 +545,21 @@ export default function DashboardOverview() {
 
           {/* Custom Date Range Picker */}
           {datePreset === "custom" && (
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs text-xs animate-in fade-in">
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2 py-0.5 rounded-lg shadow-2xs text-xs animate-in fade-in">
               <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">From</span>
-              <input
-                type="date"
+              <CustomDatePicker
                 value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="text-xs font-mono font-medium text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                onChange={setCustomStartDate}
+                compact
+                placeholder="Start date"
               />
               <span className="text-slate-300">→</span>
               <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">To</span>
-              <input
-                type="date"
+              <CustomDatePicker
                 value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="text-xs font-mono font-medium text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                onChange={setCustomEndDate}
+                compact
+                placeholder="End date"
               />
             </div>
           )}

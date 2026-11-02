@@ -22,6 +22,7 @@ import {
   Wallet,
   CalendarCheck,
   Truck,
+  UserCog,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -133,6 +134,12 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     name: "Employees",
     href: "/employees",
     icon: UserCheck,
+    category: "Human Resources",
+  },
+  {
+    name: "Staff",
+    href: "/staff",
+    icon: UserCog,
     category: "Human Resources",
   },
   {
