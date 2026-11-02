@@ -21,6 +21,7 @@ import {
   UserCheck,
   Wallet,
   CalendarCheck,
+  Truck,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -89,6 +90,13 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     name: "Manufacturing Stock Analysis",
     href: "/manufacturing-stock-analysis",
     icon: LineChart,
+    category: "Inventory & Operations",
+  },
+  {
+    name: "Vendor Manager",
+    href: "/vendor-manager",
+    aliases: ["/vendors", "/vendor-orders", "/vendor-due"],
+    icon: Truck,
     category: "Inventory & Operations",
   },
   {
