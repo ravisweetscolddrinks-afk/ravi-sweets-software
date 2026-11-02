@@ -273,9 +273,9 @@ export default function ProductsPage() {
     const q = searchQuery.toLowerCase().trim();
     return unique.filter(
       (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.barcode.toLowerCase().includes(q) ||
-        p.shortCode.toLowerCase().includes(q) ||
+        (p.name || "").toLowerCase().includes(q) ||
+        (p.barcode || "").toLowerCase().includes(q) ||
+        (p.shortCode || "").toLowerCase().includes(q) ||
         (p.categoryName && p.categoryName.toLowerCase().includes(q)) ||
         (p.manufacturingUnitName && p.manufacturingUnitName.toLowerCase().includes(q)) ||
         (p.packingUnitName && p.packingUnitName.toLowerCase().includes(q))
@@ -591,7 +591,15 @@ export default function ProductsPage() {
           return;
         }
 
-        const parsed: ParsedProductRow[] = rawRows.map((row) => {
+        // Filter out completely blank rows where every single column is empty/whitespace
+        const nonEmptyRows = rawRows.filter((r) =>
+          Object.values(r).some(
+            (v) => v !== null && v !== undefined && String(v).trim() !== ""
+          )
+        );
+        const rowsToProcess = nonEmptyRows.length > 0 ? nonEmptyRows : rawRows;
+
+        const parsed: ParsedProductRow[] = rowsToProcess.map((row) => {
           const getVal = (patterns: string[], exclude: string[] = []) => {
             // Priority 1: Exact match on sanitized key
             for (const key of Object.keys(row)) {
@@ -638,6 +646,8 @@ export default function ProductsPage() {
             rawUnit.toLowerCase().includes("ltr")
           ) {
             unit = "litre";
+          } else if (rawUnit.toLowerCase().includes("kg")) {
+            unit = "KG";
           }
 
           const rawAmount = getVal(
@@ -648,11 +658,9 @@ export default function ProductsPage() {
           const amount = cleanAmountStr ? Number(cleanAmountStr) || 0 : 0;
 
           const manufacturingUnitName =
-            getVal(["manufacturingunitname", "manufacturingunit", "mfgunit", "mfg"], ["pack"]) ||
-            "Main Kitchen Unit";
+            getVal(["manufacturingunitname", "manufacturingunit", "mfgunit", "mfg"], ["pack"]);
           const packingUnitName =
-            getVal(["packingunitname", "packingunit", "packunit", "pack"], ["mfg"]) ||
-            "Sweet Box Pack";
+            getVal(["packingunitname", "packingunit", "packunit", "pack"], ["mfg"]);
 
           const rawImg = getVal(["imageurl", "image", "photo", "pic", "img"]);
           // User Requirement: "if no image use default image as product image"
@@ -679,15 +687,13 @@ export default function ProductsPage() {
             rawWs.toLowerCase().includes("true") ||
             rawWs === "1";
 
-          const isValid = !!(name && barcode && amount > 0);
-          let validationError = "";
-          if (!name) validationError = "Product Name required";
-          else if (!barcode) validationError = "Barcode required";
-          else if (amount <= 0) validationError = "Amount > 0 required";
+          // User Requirement: Allow import even if values are empty!
+          const isValid = true;
+          const validationError = "";
 
           return {
             name,
-            categoryName: categoryName || "Sweets",
+            categoryName: categoryName || "",
             barcode,
             shortCode,
             unit,
@@ -706,8 +712,7 @@ export default function ProductsPage() {
         });
 
         setParsedProducts(parsed);
-        const validCount = parsed.filter((r) => r.isValid).length;
-        showToast(`Loaded ${parsed.length} products (${validCount} valid)`, "info");
+        showToast(`Loaded ${parsed.length} products ready for import`, "info");
       } catch (err: any) {
         console.error("Excel parse error:", err);
         showToast("Failed to parse file: " + err.message, "error");
@@ -718,112 +723,123 @@ export default function ProductsPage() {
 
   // Start Bulk Upload of Products to Firestore
   const handleStartBulkUpload = async () => {
-    const validRows = parsedProducts.filter((r) => r.isValid);
-    if (validRows.length === 0) {
-      showToast("No valid product rows to import", "error");
+    if (parsedProducts.length === 0) {
+      showToast("No product rows to import", "error");
       return;
     }
 
     setIsBulkUploading(true);
-    setBulkProgress({ current: 0, total: validRows.length, currentName: "" });
+    setBulkProgress({ current: 0, total: parsedProducts.length, currentName: "" });
 
     // Local caching maps for categories, mfg units, and packing units to minimize Firestore writes
     const catMap = new Map<string, { id: string; name: string }>();
-    categories.forEach((c) => catMap.set(c.name.toLowerCase().trim(), c));
+    categories.forEach((c) => {
+      if (c.name) catMap.set(c.name.toLowerCase().trim(), c);
+    });
 
     const mfgMap = new Map<string, { id: string; name: string }>();
-    manufacturingUnits.forEach((m) => mfgMap.set(m.name.toLowerCase().trim(), m));
+    manufacturingUnits.forEach((m) => {
+      if (m.name) mfgMap.set(m.name.toLowerCase().trim(), m);
+    });
 
     const packMap = new Map<string, { id: string; name: string }>();
-    packingUnits.forEach((p) => packMap.set(p.name.toLowerCase().trim(), p));
+    packingUnits.forEach((p) => {
+      if (p.name) packMap.set(p.name.toLowerCase().trim(), p);
+    });
 
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < validRows.length; i++) {
-      const row = validRows[i];
+    for (let i = 0; i < parsedProducts.length; i++) {
+      const row = parsedProducts[i];
       setBulkProgress({
         current: i + 1,
-        total: validRows.length,
-        currentName: row.name,
+        total: parsedProducts.length,
+        currentName: row.name || `Product #${i + 1}`,
       });
 
       try {
-        // Resolve or create Category
-        const cKey = row.categoryName.toLowerCase().trim();
+        // Resolve or create Category (only if provided)
         let catId = "";
-        let catName = row.categoryName.trim() || "Sweets";
-        if (catMap.has(cKey)) {
-          const matched = catMap.get(cKey)!;
-          catId = matched.id;
-          catName = matched.name;
-        } else {
-          try {
-            const catDoc = await addDoc(collection(db, "product_categories"), {
-              name: catName,
-              createdAt: serverTimestamp(),
-            });
-            catId = catDoc.id;
-            catMap.set(cKey, { id: catId, name: catName });
-          } catch (e) {
-            catId = categories[0]?.id || "";
-            catName = categories[0]?.name || "Sweets";
+        let catName = (row.categoryName || "").trim();
+        if (catName) {
+          const cKey = catName.toLowerCase().trim();
+          if (catMap.has(cKey)) {
+            const matched = catMap.get(cKey)!;
+            catId = matched.id;
+            catName = matched.name;
+          } else {
+            try {
+              const catDoc = await addDoc(collection(db, "product_categories"), {
+                name: catName,
+                createdAt: serverTimestamp(),
+              });
+              catId = catDoc.id;
+              catMap.set(cKey, { id: catId, name: catName });
+            } catch (e) {
+              catId = categories[0]?.id || "";
+              catName = categories[0]?.name || catName;
+            }
           }
         }
 
-        // Resolve or create Manufacturing Unit
-        const mKey = row.manufacturingUnitName.toLowerCase().trim();
+        // Resolve or create Manufacturing Unit (only if provided)
         let mfgId = "";
-        let mfgName = row.manufacturingUnitName.trim() || "Main Kitchen Unit";
-        if (mfgMap.has(mKey)) {
-          const matched = mfgMap.get(mKey)!;
-          mfgId = matched.id;
-          mfgName = matched.name;
-        } else {
-          try {
-            const mfgDoc = await addDoc(collection(db, "manufacturing_units"), {
-              name: mfgName,
-              createdAt: serverTimestamp(),
-            });
-            mfgId = mfgDoc.id;
-            mfgMap.set(mKey, { id: mfgId, name: mfgName });
-          } catch (e) {
-            mfgId = manufacturingUnits[0]?.id || "";
-            mfgName = manufacturingUnits[0]?.name || "Main Kitchen Unit";
+        let mfgName = (row.manufacturingUnitName || "").trim();
+        if (mfgName) {
+          const mKey = mfgName.toLowerCase().trim();
+          if (mfgMap.has(mKey)) {
+            const matched = mfgMap.get(mKey)!;
+            mfgId = matched.id;
+            mfgName = matched.name;
+          } else {
+            try {
+              const mfgDoc = await addDoc(collection(db, "manufacturing_units"), {
+                name: mfgName,
+                createdAt: serverTimestamp(),
+              });
+              mfgId = mfgDoc.id;
+              mfgMap.set(mKey, { id: mfgId, name: mfgName });
+            } catch (e) {
+              mfgId = manufacturingUnits[0]?.id || "";
+              mfgName = manufacturingUnits[0]?.name || mfgName;
+            }
           }
         }
 
-        // Resolve or create Packing Unit
-        const pKey = row.packingUnitName.toLowerCase().trim();
+        // Resolve or create Packing Unit (only if provided)
         let packId = "";
-        let packName = row.packingUnitName.trim() || "Sweet Box Pack";
-        if (packMap.has(pKey)) {
-          const matched = packMap.get(pKey)!;
-          packId = matched.id;
-          packName = matched.name;
-        } else {
-          try {
-            const packDoc = await addDoc(collection(db, "packing_units"), {
-              name: packName,
-              createdAt: serverTimestamp(),
-            });
-            packId = packDoc.id;
-            packMap.set(pKey, { id: packId, name: packName });
-          } catch (e) {
-            packId = packingUnits[0]?.id || "";
-            packName = packingUnits[0]?.name || "Sweet Box Pack";
+        let packName = (row.packingUnitName || "").trim();
+        if (packName) {
+          const pKey = packName.toLowerCase().trim();
+          if (packMap.has(pKey)) {
+            const matched = packMap.get(pKey)!;
+            packId = matched.id;
+            packName = matched.name;
+          } else {
+            try {
+              const packDoc = await addDoc(collection(db, "packing_units"), {
+                name: packName,
+                createdAt: serverTimestamp(),
+              });
+              packId = packDoc.id;
+              packMap.set(pKey, { id: packId, name: packName });
+            } catch (e) {
+              packId = packingUnits[0]?.id || "";
+              packName = packingUnits[0]?.name || packName;
+            }
           }
         }
 
-        // Add to products collection
+        // Add to products collection (allowing empty values as requested)
         await addDoc(collection(db, "products"), {
-          name: row.name.trim(),
+          name: (row.name || "").trim(),
           categoryId: catId,
           categoryName: catName,
-          barcode: String(row.barcode).trim(),
-          shortCode: String(row.shortCode).trim(),
-          unit: row.unit,
-          amount: Number(row.amount),
+          barcode: String(row.barcode || "").trim(),
+          shortCode: String(row.shortCode || "").trim(),
+          unit: row.unit || "",
+          amount: Number(row.amount) || 0,
           manufacturingUnitId: mfgId,
           manufacturingUnitName: mfgName,
           packingUnitId: packId,
@@ -1211,7 +1227,7 @@ export default function ProductsPage() {
 
                       {/* Name */}
                       <td className="px-3.5 py-2 text-slate-900 font-medium">
-                        {p.name}
+                        {p.name || <span className="font-mono text-slate-300 italic text-[11px]">NULL</span>}
                       </td>
 
                       {/* Category */}
@@ -1242,7 +1258,7 @@ export default function ProductsPage() {
 
                       {/* Amount / Price */}
                       <td className="px-3.5 py-2 text-right font-mono text-slate-900 font-medium">
-                        ₹{Number(p.amount).toFixed(2)}
+                        ₹{Number(p.amount || 0).toFixed(2)}
                       </td>
 
                       {/* Manufacturing Unit */}
@@ -1958,13 +1974,8 @@ export default function ProductsPage() {
                     </span>
                     <div className="flex items-center gap-2 text-[11px]">
                       <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
-                        ✓ {parsedProducts.filter((r) => r.isValid).length} Valid
+                        ✓ {parsedProducts.length} Ready to Import
                       </span>
-                      {parsedProducts.filter((r) => !r.isValid).length > 0 && (
-                        <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-medium">
-                          ⚠ {parsedProducts.filter((r) => !r.isValid).length} Issues
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -1983,37 +1994,28 @@ export default function ProductsPage() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {parsedProducts.map((row, idx) => (
-                          <tr key={idx} className={row.isValid ? "hover:bg-slate-50/50" : "bg-rose-50/30"}>
+                          <tr key={idx} className="hover:bg-slate-50/50">
                             <td className="py-2 px-3 whitespace-nowrap">
-                              {row.isValid ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                  <CheckCircle2 size={10} /> Valid
-                                </span>
-                              ) : (
-                                <span
-                                  className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200"
-                                  title={row.validationError}
-                                >
-                                  <AlertCircle size={10} /> {row.validationError}
-                                </span>
-                              )}
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                <CheckCircle2 size={10} /> Ready
+                              </span>
                             </td>
                             <td className="py-2 px-2 text-center">
                               <img
                                 src={row.imageUrl || "/logo.png"}
-                                alt={row.name}
+                                alt={row.name || "Product"}
                                 className="w-6 h-6 rounded object-contain border border-slate-200 mx-auto bg-white p-0.5 shadow-2xs"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).src = "/logo.png";
                                 }}
                               />
                             </td>
-                            <td className="py-2 px-3 font-medium text-slate-800">{row.name || "—"}</td>
-                            <td className="py-2 px-3 text-slate-500">{row.categoryName || "Sweets"}</td>
-                            <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{row.barcode || "—"}</td>
-                            <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{row.unit}</td>
+                            <td className="py-2 px-3 font-medium text-slate-800">{row.name || <span className="text-slate-400 italic">Empty</span>}</td>
+                            <td className="py-2 px-3 text-slate-500">{row.categoryName || <span className="text-slate-400 italic">Empty</span>}</td>
+                            <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{row.barcode || <span className="text-slate-400 italic">Empty</span>}</td>
+                            <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{row.unit || <span className="text-slate-400 italic">Empty</span>}</td>
                             <td className="py-2 px-3 font-mono text-slate-800 text-right font-medium">
-                              ₹{row.amount}
+                              {row.amount > 0 ? `₹${row.amount}` : <span className="text-slate-400 italic">₹0</span>}
                             </td>
                           </tr>
                         ))}
@@ -2065,7 +2067,7 @@ export default function ProductsPage() {
               </button>
               <button
                 type="button"
-                disabled={isBulkUploading || parsedProducts.filter((r) => r.isValid).length === 0}
+                disabled={isBulkUploading || parsedProducts.length === 0}
                 onClick={handleStartBulkUpload}
                 className="px-5 py-2 text-xs rounded-lg text-white font-medium cursor-pointer shadow-sm flex items-center gap-2 disabled:opacity-40"
                 style={{ backgroundColor: "var(--color-brand-primary)" }}
@@ -2079,7 +2081,7 @@ export default function ProductsPage() {
                   <>
                     <FileSpreadsheet size={14} />
                     <span>
-                      Import {parsedProducts.filter((r) => r.isValid).length} Products
+                      Import {parsedProducts.length} Products
                     </span>
                   </>
                 )}

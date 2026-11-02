@@ -226,10 +226,10 @@ export default function EmployeesPage() {
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase().trim();
       return (
-        emp.name.toLowerCase().includes(q) ||
-        emp.employeeId.toLowerCase().includes(q) ||
-        emp.phone.toLowerCase().includes(q) ||
-        emp.city.toLowerCase().includes(q) ||
+        (emp.name || "").toLowerCase().includes(q) ||
+        (emp.employeeId || "").toLowerCase().includes(q) ||
+        (emp.phone || "").toLowerCase().includes(q) ||
+        (emp.city || "").toLowerCase().includes(q) ||
         (emp.email && emp.email.toLowerCase().includes(q))
       );
     });
@@ -1179,7 +1179,15 @@ export default function EmployeesPage() {
           return;
         }
 
-        const parsed: ParsedEmployeeRow[] = rawRows.map((row) => {
+        // Filter out completely blank rows where every single column is empty/whitespace
+        const nonEmptyRows = rawRows.filter((r) =>
+          Object.values(r).some(
+            (v) => v !== null && v !== undefined && String(v).trim() !== ""
+          )
+        );
+        const rowsToProcess = nonEmptyRows.length > 0 ? nonEmptyRows : rawRows;
+
+        const parsed: ParsedEmployeeRow[] = rowsToProcess.map((row) => {
           const getVal = (patterns: string[], exclude: string[] = []) => {
             // Priority 1: Exact match on sanitized key
             for (const key of Object.keys(row)) {
@@ -1219,7 +1227,7 @@ export default function EmployeesPage() {
           }
 
           const email = getVal(["email", "emailid", "mail"], ["emergency"]);
-          const city = getVal(["city", "town", "village", "district"]) || "Chirala";
+          const city = getVal(["city", "town", "village", "district"]);
           const address = getVal(["address", "street", "loc", "locationaddress"]);
 
           const rawSalaryType = getVal(
@@ -1242,7 +1250,7 @@ export default function EmployeesPage() {
 
           const rawLeaves = getVal(["acceptedleaves", "leave", "leaves", "allowedleaves"]);
           const cleanLeavesStr = rawLeaves.replace(/[^0-9]/g, "");
-          const acceptedLeaves = cleanLeavesStr !== "" ? Number(cleanLeavesStr) || 0 : 2;
+          const acceptedLeaves = cleanLeavesStr !== "" ? Number(cleanLeavesStr) || 0 : 0;
 
           const emergencyContactName = getVal(
             ["emergencycontactname", "emergencyname", "kinname", "emergencycontact"],
@@ -1281,11 +1289,9 @@ export default function EmployeesPage() {
             ? "Inactive"
             : "Active";
 
-          const isValid = !!(name && phone && salaryAmount > 0);
-          let validationError = "";
-          if (!name) validationError = "Name required";
-          else if (!phone) validationError = "Mobile required";
-          else if (salaryAmount <= 0) validationError = "Salary > 0 required";
+          // User Requirement: Allow import even if values are empty!
+          const isValid = true;
+          const validationError = "";
 
           return {
             name,
@@ -1308,8 +1314,7 @@ export default function EmployeesPage() {
         });
 
         setParsedEmployees(parsed);
-        const validCount = parsed.filter((r) => r.isValid).length;
-        showToast(`Loaded ${parsed.length} rows (${validCount} valid)`, "info");
+        showToast(`Loaded ${parsed.length} employees ready for import`, "info");
       } catch (err: any) {
         console.error("Excel parse error:", err);
         showToast("Failed to parse file: " + err.message, "error");
@@ -1320,24 +1325,23 @@ export default function EmployeesPage() {
 
   // Start Bulk Upload: Generate QR code -> upload to ImageKit -> save to Firestore
   const handleStartBulkUpload = async () => {
-    const validRows = parsedEmployees.filter((r) => r.isValid);
-    if (validRows.length === 0) {
-      showToast("No valid employee rows to import", "error");
+    if (parsedEmployees.length === 0) {
+      showToast("No employee rows to import", "error");
       return;
     }
 
     setIsBulkUploading(true);
-    setBulkProgress({ current: 0, total: validRows.length, currentName: "" });
+    setBulkProgress({ current: 0, total: parsedEmployees.length, currentName: "" });
 
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < validRows.length; i++) {
-      const row = validRows[i];
+    for (let i = 0; i < parsedEmployees.length; i++) {
+      const row = parsedEmployees[i];
       setBulkProgress({
         current: i + 1,
-        total: validRows.length,
-        currentName: row.name,
+        total: parsedEmployees.length,
+        currentName: row.name || `Employee #${i + 1}`,
       });
 
       try {
@@ -1379,26 +1383,26 @@ export default function EmployeesPage() {
             ? { latitude: row.latitude, longitude: row.longitude }
             : null;
 
-        // 5. Add to Firestore employees collection
+        // 5. Add to Firestore employees collection (allowing empty values)
         await addDoc(collection(db, "employees"), {
           employeeId: empCode,
-          name: row.name,
-          phone: row.phone,
-          email: row.email,
-          city: row.city,
-          address: row.address,
+          name: row.name || "",
+          phone: row.phone || "",
+          email: row.email || "",
+          city: row.city || "",
+          address: row.address || "",
           profilePicUrl: "", // As specified, no profile URL in bulk import
-          salaryType: row.salaryType,
-          salaryAmount: row.salaryAmount,
-          acceptedLeaves: row.acceptedLeaves,
+          salaryType: row.salaryType || "monthly",
+          salaryAmount: Number(row.salaryAmount) || 0,
+          acceptedLeaves: Number(row.acceptedLeaves) || 0,
           emergencyContact: {
-            name: row.emergencyContactName,
-            relation: row.emergencyContactRelation,
-            phone: row.emergencyContactPhone,
+            name: row.emergencyContactName || "",
+            relation: row.emergencyContactRelation || "",
+            phone: row.emergencyContactPhone || "",
           },
           locationCoordinates,
           qrCodeUrl: finalQrUrl,
-          status: row.status,
+          status: row.status || "Active",
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -1919,12 +1923,12 @@ export default function EmployeesPage() {
                       {emp.profilePicUrl ? (
                         <img
                           src={emp.profilePicUrl}
-                          alt={emp.name}
+                          alt={emp.name || "Employee"}
                           className="w-7 h-7 rounded-full object-cover border border-slate-200 mx-auto shadow-2xs"
                         />
                       ) : (
                         <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-500 border border-slate-200 flex items-center justify-center text-[11px] font-medium mx-auto shadow-2xs">
-                          {emp.name.charAt(0).toUpperCase()}
+                          {(emp.name || "E").charAt(0).toUpperCase()}
                         </div>
                       )}
                     </td>
@@ -1945,7 +1949,7 @@ export default function EmployeesPage() {
 
                     {/* Name */}
                     <td className="px-3.5 py-2 text-slate-900 font-medium">
-                      {emp.name}
+                      {emp.name || <span className="font-mono text-slate-300 italic text-[11px]">NULL</span>}
                     </td>
 
                     {/* Phone */}
@@ -1964,7 +1968,7 @@ export default function EmployeesPage() {
 
                     {/* Salary Plan */}
                     <td className="px-3.5 py-2 text-right font-mono text-slate-900 font-medium">
-                      ₹{emp.salaryAmount.toLocaleString("en-IN")}{" "}
+                      ₹{(emp.salaryAmount || 0).toLocaleString("en-IN")}{" "}
                       <span className="text-[10px] text-slate-400 font-normal">/{emp.salaryType}</span>
                     </td>
 
@@ -2768,13 +2772,8 @@ export default function EmployeesPage() {
                     </span>
                     <div className="flex items-center gap-2 text-[11px]">
                       <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
-                        ✓ {parsedEmployees.filter((r) => r.isValid).length} Valid
+                        ✓ {parsedEmployees.length} Ready to Import
                       </span>
-                      {parsedEmployees.filter((r) => !r.isValid).length > 0 && (
-                        <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-medium">
-                          ⚠ {parsedEmployees.filter((r) => !r.isValid).length} Issues
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -2792,31 +2791,22 @@ export default function EmployeesPage() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {parsedEmployees.map((row, idx) => (
-                          <tr key={idx} className={row.isValid ? "hover:bg-slate-50/50" : "bg-rose-50/30"}>
+                          <tr key={idx} className="hover:bg-slate-50/50">
                             <td className="py-2 px-3 whitespace-nowrap">
-                              {row.isValid ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                  <CheckCircle2 size={10} /> Valid
-                                </span>
-                              ) : (
-                                <span
-                                  className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200"
-                                  title={row.validationError}
-                                >
-                                  <AlertCircle size={10} /> {row.validationError}
-                                </span>
-                              )}
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                <CheckCircle2 size={10} /> Ready
+                              </span>
                             </td>
-                            <td className="py-2 px-3 font-medium text-slate-800">{row.name || "—"}</td>
-                            <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{row.phone || "—"}</td>
-                            <td className="py-2 px-3 text-slate-500">{row.city || "—"}</td>
+                            <td className="py-2 px-3 font-medium text-slate-800">{row.name || <span className="text-slate-400 italic">Empty</span>}</td>
+                            <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{row.phone || <span className="text-slate-400 italic">Empty</span>}</td>
+                            <td className="py-2 px-3 text-slate-500">{row.city || <span className="text-slate-400 italic">Empty</span>}</td>
                             <td className="py-2 px-3 font-mono text-slate-700">
-                              ₹{row.salaryAmount} / <span className="capitalize">{row.salaryType}</span>
+                              {row.salaryAmount > 0 ? `₹${row.salaryAmount} / ${row.salaryType}` : <span className="text-slate-400 italic">₹0</span>}
                             </td>
                             <td className="py-2 px-3 text-slate-500 text-[11px]">
                               {row.emergencyContactName
                                 ? `${row.emergencyContactName} (${row.emergencyContactRelation || "Contact"})`
-                                : "—"}
+                                : <span className="text-slate-400 italic">—</span>}
                             </td>
                           </tr>
                         ))}
@@ -2868,7 +2858,7 @@ export default function EmployeesPage() {
               </button>
               <button
                 type="button"
-                disabled={isBulkUploading || parsedEmployees.filter((r) => r.isValid).length === 0}
+                disabled={isBulkUploading || parsedEmployees.length === 0}
                 onClick={handleStartBulkUpload}
                 className="px-5 py-2 text-xs rounded-lg text-white font-medium cursor-pointer shadow-sm flex items-center gap-2 disabled:opacity-40"
                 style={{ backgroundColor: "var(--color-brand-primary)" }}
@@ -2882,7 +2872,7 @@ export default function EmployeesPage() {
                   <>
                     <FileSpreadsheet size={14} />
                     <span>
-                      Import {parsedEmployees.filter((r) => r.isValid).length} Employees
+                      Import {parsedEmployees.length} Employees
                     </span>
                   </>
                 )}
