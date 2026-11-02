@@ -912,6 +912,9 @@ export default function PosBillingPage() {
         taxableSubtotal: financials.taxableSubtotal,
         cgst: financials.cgst,
         sgst: financials.sgst,
+        gstPercentage: gstConfig.percentage,
+        cgstPercentage: gstConfig.percentage / 2,
+        sgstPercentage: gstConfig.percentage / 2,
         grandTotal: financials.grandTotal,
         paymentMethod: paymentMode,
         splitDetails:

@@ -261,6 +261,9 @@ export default function WalkInSalesPage() {
       taxableSubtotal: sale.taxableSubtotal,
       cgst: sale.cgst,
       sgst: sale.sgst,
+      gstPercentage: (sale as any).gstPercentage,
+      cgstPercentage: (sale as any).gstPercentage ? (sale as any).gstPercentage / 2 : undefined,
+      sgstPercentage: (sale as any).gstPercentage ? (sale as any).gstPercentage / 2 : undefined,
       grandTotal: sale.grandTotal,
       paymentMethod: sale.paymentMethod,
       splitDetails: sale.splitDetails,
@@ -754,13 +757,29 @@ export default function WalkInSalesPage() {
                 )}
                 {viewingSale.cgst > 0 && (
                   <div className="flex justify-between text-slate-500 text-[11px]">
-                    <span>CGST:</span>
+                    <span>
+                      CGST (
+                      {(viewingSale as any).gstPercentage
+                        ? Number(((viewingSale as any).gstPercentage / 2).toFixed(2))
+                        : viewingSale.taxableSubtotal > 0
+                        ? Number(((viewingSale.cgst / viewingSale.taxableSubtotal) * 100).toFixed(1))
+                        : 2.5}
+                      %):
+                    </span>
                     <span>₹{viewingSale.cgst.toFixed(2)}</span>
                   </div>
                 )}
                 {viewingSale.sgst > 0 && (
                   <div className="flex justify-between text-slate-500 text-[11px]">
-                    <span>SGST:</span>
+                    <span>
+                      SGST (
+                      {(viewingSale as any).gstPercentage
+                        ? Number(((viewingSale as any).gstPercentage / 2).toFixed(2))
+                        : viewingSale.taxableSubtotal > 0
+                        ? Number(((viewingSale.sgst / viewingSale.taxableSubtotal) * 100).toFixed(1))
+                        : 2.5}
+                      %):
+                    </span>
                     <span>₹{viewingSale.sgst.toFixed(2)}</span>
                   </div>
                 )}

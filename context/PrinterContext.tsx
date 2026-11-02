@@ -37,6 +37,9 @@ export interface ReceiptData {
   taxableSubtotal: number;
   cgst: number;
   sgst: number;
+  cgstPercentage?: number;
+  sgstPercentage?: number;
+  gstPercentage?: number;
   grandTotal: number;
   paymentMethod: string;
   splitDetails?: { cash: number; upi: number; card: number };
@@ -147,11 +150,22 @@ function buildEscPosBuffer(
   if (data.discount > 0) {
     pushLine(padTotal("Discount:", `-Rs.${data.discount.toFixed(2)}`));
   }
+  const getTaxPct = (amount: number, explicitPct?: number) => {
+    if (explicitPct !== undefined && explicitPct > 0) return explicitPct;
+    if (data.gstPercentage && data.gstPercentage > 0) return Number((data.gstPercentage / 2).toFixed(2));
+    if (data.taxableSubtotal > 0 && amount > 0) {
+      return Number(((amount / data.taxableSubtotal) * 100).toFixed(1));
+    }
+    return 2.5;
+  };
+
   if (data.cgst > 0) {
-    pushLine(padTotal("CGST:", `Rs.${data.cgst.toFixed(2)}`));
+    const cgstPct = getTaxPct(data.cgst, data.cgstPercentage);
+    pushLine(padTotal(`CGST (${cgstPct}%):`, `Rs.${data.cgst.toFixed(2)}`));
   }
   if (data.sgst > 0) {
-    pushLine(padTotal("SGST:", `Rs.${data.sgst.toFixed(2)}`));
+    const sgstPct = getTaxPct(data.sgst, data.sgstPercentage);
+    pushLine(padTotal(`SGST (${sgstPct}%):`, `Rs.${data.sgst.toFixed(2)}`));
   }
 
   push(0x1b, 0x45, 0x01); // Bold ON
@@ -612,14 +626,22 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
               )}
               {(activeReceipt.cgst > 0 || activeReceipt.sgst > 0) && (
                 <>
-                  <tr>
-                    <td style={{ textAlign: "left" }}>CGST:</td>
-                    <td style={{ textAlign: "right" }}>₹{activeReceipt.cgst.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ textAlign: "left" }}>SGST:</td>
-                    <td style={{ textAlign: "right" }}>₹{activeReceipt.sgst.toFixed(2)}</td>
-                  </tr>
+                  {activeReceipt.cgst > 0 && (
+                    <tr>
+                      <td style={{ textAlign: "left" }}>
+                        CGST ({activeReceipt.cgstPercentage ?? (activeReceipt.gstPercentage ? Number((activeReceipt.gstPercentage / 2).toFixed(2)) : (activeReceipt.taxableSubtotal > 0 ? Number(((activeReceipt.cgst / activeReceipt.taxableSubtotal) * 100).toFixed(1)) : 2.5))}%) :
+                      </td>
+                      <td style={{ textAlign: "right" }}>₹{activeReceipt.cgst.toFixed(2)}</td>
+                    </tr>
+                  )}
+                  {activeReceipt.sgst > 0 && (
+                    <tr>
+                      <td style={{ textAlign: "left" }}>
+                        SGST ({activeReceipt.sgstPercentage ?? (activeReceipt.gstPercentage ? Number((activeReceipt.gstPercentage / 2).toFixed(2)) : (activeReceipt.taxableSubtotal > 0 ? Number(((activeReceipt.sgst / activeReceipt.taxableSubtotal) * 100).toFixed(1)) : 2.5))}%) :
+                      </td>
+                      <td style={{ textAlign: "right" }}>₹{activeReceipt.sgst.toFixed(2)}</td>
+                    </tr>
+                  )}
                 </>
               )}
               <tr style={{ fontSize: "12px", fontWeight: "bold", borderTop: "1px solid #000" }}>

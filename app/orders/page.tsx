@@ -1238,6 +1238,9 @@ export default function OrdersPage() {
       taxableSubtotal: order.taxableSubtotal,
       cgst: order.cgst,
       sgst: order.sgst,
+      gstPercentage: order.gstPercentage,
+      cgstPercentage: order.gstPercentage ? order.gstPercentage / 2 : undefined,
+      sgstPercentage: order.gstPercentage ? order.gstPercentage / 2 : undefined,
       grandTotal: order.grandTotal,
       paymentMethod: order.paymentMethod,
       splitDetails: order.splitDetails,
@@ -4003,16 +4006,36 @@ export default function OrdersPage() {
                     <span>₹{Number(a4InvoiceOrder.taxableSubtotal).toFixed(2)}</span>
                   </div>
 
-                  {a4InvoiceOrder.isGstEnabled && a4InvoiceOrder.gstPercentage > 0 && (
+                  {(a4InvoiceOrder.cgst > 0 || a4InvoiceOrder.sgst > 0) && (
                     <>
-                      <div className="flex justify-between py-1 text-slate-600 text-[11px]">
-                        <span>CGST ({a4InvoiceOrder.gstPercentage / 2}%):</span>
-                        <span>₹{Number(a4InvoiceOrder.cgst).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between py-1 text-slate-600 text-[11px]">
-                        <span>SGST ({a4InvoiceOrder.gstPercentage / 2}%):</span>
-                        <span>₹{Number(a4InvoiceOrder.sgst).toFixed(2)}</span>
-                      </div>
+                      {a4InvoiceOrder.cgst > 0 && (
+                        <div className="flex justify-between py-1 text-slate-600 text-[11px]">
+                          <span>
+                            CGST (
+                            {a4InvoiceOrder.gstPercentage
+                              ? Number((a4InvoiceOrder.gstPercentage / 2).toFixed(2))
+                              : a4InvoiceOrder.taxableSubtotal > 0
+                              ? Number(((a4InvoiceOrder.cgst / a4InvoiceOrder.taxableSubtotal) * 100).toFixed(1))
+                              : 2.5}
+                            %):
+                          </span>
+                          <span>₹{Number(a4InvoiceOrder.cgst).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {a4InvoiceOrder.sgst > 0 && (
+                        <div className="flex justify-between py-1 text-slate-600 text-[11px]">
+                          <span>
+                            SGST (
+                            {a4InvoiceOrder.gstPercentage
+                              ? Number((a4InvoiceOrder.gstPercentage / 2).toFixed(2))
+                              : a4InvoiceOrder.taxableSubtotal > 0
+                              ? Number(((a4InvoiceOrder.sgst / a4InvoiceOrder.taxableSubtotal) * 100).toFixed(1))
+                              : 2.5}
+                            %):
+                          </span>
+                          <span>₹{Number(a4InvoiceOrder.sgst).toFixed(2)}</span>
+                        </div>
+                      )}
                     </>
                   )}
 
