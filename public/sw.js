@@ -6,7 +6,11 @@ const PRECACHE_ASSETS = [
   '/',
   '/manifest.json',
   '/logo.png',
-  '/globals.css',
+  '/icon-192x192.png',
+  '/icon-512x512.png',
+  '/icon-maskable.png',
+  '/apple-touch-icon.png',
+  '/favicon.png',
 ];
 
 // Install Event: Cache essential shell and activate immediately

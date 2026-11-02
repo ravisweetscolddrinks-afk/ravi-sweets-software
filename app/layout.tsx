@@ -22,14 +22,27 @@ export const metadata: Metadata = {
   description: "Retail POS, Manufacturing, Stock & Employee Management Console",
   manifest: "/manifest.json",
   icons: {
-    icon: "/logo.png",
+    icon: [
+      { url: "/logo.png" },
+      { url: "/favicon.png", sizes: "48x48", type: "image/png" },
+      { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512x512.png", sizes: "512x512", type: "image/png" },
+    ],
     shortcut: "/logo.png",
-    apple: "/logo.png",
+    apple: [
+      { url: "/logo.png" },
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
     title: "Ravi Sweets",
+  },
+  other: {
+    "msapplication-TileImage": "/logo.png",
+    "msapplication-TileColor": "#348bdd",
+    "mobile-web-app-capable": "yes",
   },
 };
 
