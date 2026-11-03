@@ -27,6 +27,7 @@ import {
   PanelLeftOpen,
   LogOut,
   ShieldCheck,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -64,6 +65,12 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     href: "/orders",
     aliases: ["/order"],
     icon: ShoppingCart,
+    category: "Sales & POS",
+  },
+  {
+    name: "Quotations",
+    href: "/quotations",
+    icon: FileText,
     category: "Sales & POS",
   },
   {

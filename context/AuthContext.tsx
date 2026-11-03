@@ -271,6 +271,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         "/vendor-orders": "/vendor-manager",
         "/vendor-due": "/vendor-manager",
         "/order": "/orders",
+        "/quotation": "/quotations",
         "/employee-attendence": "/employee-attendance",
       };
 

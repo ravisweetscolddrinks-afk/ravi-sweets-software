@@ -97,6 +97,7 @@ export const AVAILABLE_MENUS: MenuItemOption[] = [
   { id: "/pos", name: "POS Billing", category: "Sales & POS" },
   { id: "/walk-in-sales", name: "Walk In Sales", category: "Sales & POS" },
   { id: "/orders", name: "Orders", category: "Sales & POS" },
+  { id: "/quotations", name: "Quotations", category: "Sales & POS" },
 
   // Portals
   { id: "/manufacturing-portal", name: "Manufacturing Portal", category: "Portals" },

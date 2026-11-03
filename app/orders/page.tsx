@@ -4017,14 +4017,15 @@ export default function OrdersPage() {
                 max-width: 100% !important;
                 min-height: auto !important;
                 margin: 0 !important;
-                padding: 8mm !important;
+                padding: 12mm 15mm !important;
                 box-shadow: none !important;
                 border: none !important;
                 background: #ffffff !important;
+                box-sizing: border-box !important;
               }
               @page {
                 size: A4 portrait;
-                margin: 8mm;
+                margin: 0 !important;
               }
             }
           `}} />
@@ -4032,7 +4033,7 @@ export default function OrdersPage() {
           {/* A4 Invoice Paper Sheet */}
           <div
             id="a4-invoice-sheet"
-            className="w-full max-w-[210mm] min-h-[297mm] bg-white text-slate-900 p-8 sm:p-10 shadow-2xl rounded-sm print:shadow-none print:p-0 print:max-w-none print:w-full border border-slate-200 flex flex-col justify-between"
+            className="w-full max-w-[210mm] min-h-[297mm] bg-white text-slate-900 p-8 sm:p-10 shadow-2xl rounded-sm print:shadow-none print:max-w-none print:w-full border border-slate-200 flex flex-col justify-between"
           >
             <div>
               {/* Header: Company Details & Invoice Metadata */}
