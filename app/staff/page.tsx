@@ -116,6 +116,7 @@ export const AVAILABLE_MENUS: MenuItemOption[] = [
   // Catalog & CRM
   { id: "/customers", name: "Customers", category: "Catalog & CRM" },
   { id: "/products", name: "Products", category: "Catalog & CRM" },
+  { id: "/barcode-generator", name: "Barcode Generator", category: "Catalog & CRM" },
   { id: "/product-categories", name: "Product Categories", category: "Catalog & CRM" },
 
   // Human Resources

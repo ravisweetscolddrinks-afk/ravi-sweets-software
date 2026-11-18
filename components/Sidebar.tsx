@@ -28,6 +28,7 @@ import {
   LogOut,
   ShieldCheck,
   FileText,
+  Barcode,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -132,6 +133,13 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     name: "Products",
     href: "/products",
     icon: Package,
+    category: "Catalog & CRM",
+  },
+  {
+    name: "Barcode Generator",
+    href: "/barcode-generator",
+    aliases: ["/barcode", "/barcodes"],
+    icon: Barcode,
     category: "Catalog & CRM",
   },
   {
