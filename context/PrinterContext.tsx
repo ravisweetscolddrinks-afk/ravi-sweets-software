@@ -204,6 +204,27 @@ function enrichReceiptData(
   };
 }
 
+export interface WorksheetPrintItem {
+  productName: string;
+  unit: string;
+  quantity: number;
+  calculatedKg: number;
+}
+
+export interface WorksheetPrintData {
+  worksheetNumber: string;
+  date: string;
+  note?: string;
+  tradeName?: string;
+  legalName?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  gstNumber?: string;
+  items: WorksheetPrintItem[];
+  totalCalculatedKg: number;
+}
+
 interface PrinterContextType {
   settings: PrinterSettings;
   updateSettings: (newSettings: Partial<PrinterSettings>) => void;
@@ -212,7 +233,124 @@ interface PrinterContextType {
   connectPrinter: (type: PrinterConnectionType, size: PaperSize, autoCut: boolean) => Promise<boolean>;
   disconnectPrinter: () => void;
   printReceipt: (data: ReceiptData) => Promise<boolean>;
+  printWorksheet: (data: WorksheetPrintData) => Promise<boolean>;
   maskPhoneNumber: (phone?: string) => string;
+}
+
+function buildWorksheetEscPosBuffer(
+  data: WorksheetPrintData,
+  biz: LiveBusinessSettings,
+  gst: LiveGstSettings,
+  paperSize: PaperSize,
+  autoCut: boolean
+): Uint8Array {
+  const bytes: number[] = [];
+  const push = (...b: number[]) => bytes.push(...b);
+  const pushStr = (str: string) => {
+    const enc = new TextEncoder().encode(str);
+    for (let i = 0; i < enc.length; i++) bytes.push(enc[i]);
+  };
+  const pushLine = (str: string = "") => pushStr(str + "\n");
+
+  const charWidth = paperSize === "2inch" ? 32 : 48;
+  const divider = "-".repeat(charWidth);
+  const doubleDivider = "=".repeat(charWidth);
+
+  const padRow = (lbl: string, val: string) => {
+    const spaces = Math.max(1, charWidth - lbl.length - val.length);
+    return lbl + " ".repeat(spaces) + val;
+  };
+
+  const fullAddress =
+    data.address ||
+    [biz.address, biz.city, biz.state, biz.pincode].filter(Boolean).join(", ");
+  const tradeName = data.tradeName || biz.tradeName || "RAVI SWEETS";
+  const phone = data.phone || biz.phone || "";
+  const gstNumber = data.gstNumber || gst.gstNumber || "";
+
+  // 1. Initialize Printer
+  push(0x1b, 0x40);
+
+  // 2. Business Details (Center Aligned)
+  push(0x1b, 0x61, 0x01);
+  push(0x1b, 0x21, 0x30); // Double width + height
+  pushLine(tradeName.toUpperCase());
+  push(0x1b, 0x21, 0x00);
+  if (fullAddress) pushLine(fullAddress);
+  if (phone) pushLine("Ph: " + phone);
+  if (gstNumber) pushLine("GSTIN: " + gstNumber);
+
+  pushLine(doubleDivider);
+  push(0x1b, 0x45, 0x01);
+  pushLine("WORK SHEET");
+  push(0x1b, 0x45, 0x00);
+  pushLine(divider);
+
+  // 3. Date & Worksheet Meta (Left Aligned)
+  push(0x1b, 0x61, 0x00);
+  push(0x1b, 0x45, 0x01);
+  pushLine(`Date : ${data.date}`);
+  push(0x1b, 0x45, 0x00);
+  if (data.worksheetNumber) pushLine(`Ref #: ${data.worksheetNumber}`);
+  if (data.note) pushLine(`Note : ${data.note}`);
+  pushLine(divider);
+
+  // 4. Selected Items Only
+  if (paperSize === "2inch") {
+    push(0x1b, 0x45, 0x01);
+    pushLine(padRow("ITEM", "QTY / KG"));
+    push(0x1b, 0x45, 0x00);
+    pushLine(divider);
+    data.items.forEach((item, idx) => {
+      pushLine(`${idx + 1}. ${item.productName}`);
+      const qtyTxt = `${item.quantity} ${item.unit}`;
+      const kgTxt =
+        item.calculatedKg > 0 && item.unit.toLowerCase() !== "kg"
+          ? `${item.calculatedKg.toFixed(2)} KG`
+          : "";
+      pushLine(padRow(`   ${qtyTxt}`, kgTxt));
+    });
+  } else {
+    push(0x1b, 0x45, 0x01);
+    pushLine(
+      "# ".padEnd(3, " ") +
+        "ITEM".padEnd(23, " ") +
+        "QTY".padStart(11, " ") +
+        "CALC KG".padStart(11, " ")
+    );
+    push(0x1b, 0x45, 0x00);
+    pushLine(divider);
+    data.items.forEach((item, idx) => {
+      const num = `${idx + 1}.`.padEnd(3, " ");
+      const name =
+        item.productName.length > 22
+          ? item.productName.slice(0, 20) + ".."
+          : item.productName.padEnd(23, " ");
+      const qty = `${item.quantity} ${item.unit}`.padStart(11, " ");
+      const kg =
+        item.calculatedKg > 0
+          ? `${item.calculatedKg.toFixed(2)} KG`.padStart(11, " ")
+          : "-".padStart(11, " ");
+      pushLine(`${num}${name}${qty}${kg}`);
+    });
+  }
+
+  pushLine(divider);
+  push(0x1b, 0x45, 0x01);
+  pushLine(padRow("Total Selected Items:", `${data.items.length}`));
+  if (data.totalCalculatedKg > 0) {
+    pushLine(padRow("Total Calculated KG:", `${data.totalCalculatedKg.toFixed(2)} KG`));
+  }
+  push(0x1b, 0x45, 0x00);
+  pushLine(doubleDivider);
+
+  // Feed & Cut
+  push(0x1b, 0x64, 0x05);
+  if (autoCut) {
+    push(0x1d, 0x56, 0x41, 0x00);
+  }
+
+  return new Uint8Array(bytes);
 }
 
 const defaultSettings: PrinterSettings = {
@@ -751,6 +889,94 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
     [settings, bizSettings, gstSettings, maskPhoneNumber, showToast, setIsConnectModalOpen]
   );
 
+  // Execute Thermal Work Sheet print (Business Details -> Date -> Selected Items Only)
+  const printWorksheet = useCallback(
+    async (data: WorksheetPrintData): Promise<boolean> => {
+      if (!settings.isConnected) {
+        showToast("No thermal printer connected. Please click Connect to pair your printer.", "error");
+        setIsConnectModalOpen(true);
+        return false;
+      }
+
+      // 1. Direct WebUSB Transmission
+      if (settings.connectionType === "usb") {
+        let device = usbDeviceRef.current;
+        if (!device && typeof window !== "undefined" && "usb" in navigator) {
+          try {
+            const devices = await (navigator as any).usb.getDevices();
+            if (devices.length > 0) {
+              device = devices[0];
+              usbDeviceRef.current = device;
+            }
+          } catch (e) {}
+        }
+
+        if (!device) {
+          showToast("USB printer not detected. Please reconnect your printer.", "error");
+          setIsConnectModalOpen(true);
+          return false;
+        }
+
+        try {
+          const { outEp } = await setupUsbDevice(device);
+          const rawBuffer = buildWorksheetEscPosBuffer(
+            data,
+            bizSettings,
+            gstSettings,
+            settings.paperSize,
+            settings.autoCut
+          );
+          const result = await device.transferOut(outEp, rawBuffer);
+          if (result.status === "ok") {
+            showToast("Work Sheet printed via USB thermal printer!", "success");
+            return true;
+          } else {
+            showToast("USB transfer status: " + result.status, "error");
+            return false;
+          }
+        } catch (usbErr: any) {
+          console.error("Direct USB worksheet transfer failed:", usbErr);
+          showToast("USB print error: " + (usbErr.message || "Failed to communicate with printer"), "error");
+          return false;
+        }
+      }
+
+      // 2. Direct Web Bluetooth Transmission
+      if (settings.connectionType === "bluetooth") {
+        if (!bluetoothCharRef.current) {
+          showToast("Bluetooth printer not connected. Please reconnect your printer.", "error");
+          setIsConnectModalOpen(true);
+          return false;
+        }
+
+        try {
+          const char = bluetoothCharRef.current;
+          const rawBuffer = buildWorksheetEscPosBuffer(
+            data,
+            bizSettings,
+            gstSettings,
+            settings.paperSize,
+            settings.autoCut
+          );
+          const CHUNK = 128;
+          for (let i = 0; i < rawBuffer.length; i += CHUNK) {
+            const chunk = rawBuffer.slice(i, i + CHUNK);
+            await char.writeValue(chunk);
+          }
+          showToast("Work Sheet printed via Bluetooth thermal printer!", "success");
+          return true;
+        } catch (btErr: any) {
+          console.error("Direct Bluetooth worksheet write failed:", btErr);
+          showToast("Bluetooth print error: " + (btErr.message || "Failed to communicate with printer"), "error");
+          return false;
+        }
+      }
+
+      return false;
+    },
+    [settings, bizSettings, gstSettings, showToast, setIsConnectModalOpen]
+  );
+
   return (
     <PrinterContext.Provider
       value={{
@@ -761,6 +987,7 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
         connectPrinter,
         disconnectPrinter,
         printReceipt,
+        printWorksheet,
         maskPhoneNumber,
       }}
     >

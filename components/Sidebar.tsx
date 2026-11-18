@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   FileText,
   Barcode,
+  ClipboardList,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -96,6 +97,13 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     name: "Store Stock Entry",
     href: "/store-stock-entry",
     icon: ArrowDownToLine,
+    category: "Inventory & Operations",
+  },
+  {
+    name: "Work Sheet",
+    href: "/worksheet",
+    aliases: ["/work-sheet"],
+    icon: ClipboardList,
     category: "Inventory & Operations",
   },
   {

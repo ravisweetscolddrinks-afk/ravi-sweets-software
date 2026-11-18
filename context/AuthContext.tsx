@@ -274,6 +274,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         "/quotation": "/quotations",
         "/barcode": "/barcode-generator",
         "/barcodes": "/barcode-generator",
+        "/work-sheet": "/worksheet",
         "/employee-attendence": "/employee-attendance",
       };
 
