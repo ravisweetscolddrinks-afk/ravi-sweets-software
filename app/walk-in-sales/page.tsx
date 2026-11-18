@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   collection,
+  doc,
   query,
   orderBy,
   onSnapshot,
@@ -70,6 +71,8 @@ interface WalkInSaleRecord {
 interface StoreOption {
   id: string;
   name: string;
+  phone?: string;
+  address?: string;
 }
 
 type DateFilter = "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "all";
@@ -82,6 +85,27 @@ export default function WalkInSalesPage() {
   const [sales, setSales] = useState<WalkInSaleRecord[]>([]);
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [businessProfile, setBusinessProfile] = useState({
+    tradeName: "Ravi Sweets & Cold Drinks",
+    legalName: "Ravi Sweets",
+    phone: "",
+    email: "",
+    address: "",
+    city: "Chirala",
+    state: "Andhra Pradesh",
+    pincode: "",
+  });
+  const [gstConfig, setGstConfig] = useState<{
+    enabled: boolean;
+    percentage: number;
+    pricingType: "inclusive" | "exclusive";
+    gstNumber: string;
+  }>({
+    enabled: true,
+    percentage: 5,
+    pricingType: "inclusive",
+    gstNumber: "",
+  });
 
   // Filters & Pagination
   const [selectedStoreId, setSelectedStoreId] = useState<string>("all");
@@ -118,14 +142,60 @@ export default function WalkInSalesPage() {
     const unsubStores = onSnapshot(
       qStores,
       (snap) => {
-        setStores(snap.docs.map((d) => ({ id: d.id, name: d.data().name || "Store" })));
+        setStores(
+          snap.docs.map((d) => ({
+            id: d.id,
+            name: d.data().name || "Store",
+            phone: d.data().phone || "",
+            address: d.data().address || "",
+          }))
+        );
       },
       (err) => console.warn("Stores error:", err)
+    );
+
+    const unsubProfile = onSnapshot(
+      doc(db, "settings", "business_profile"),
+      (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          setBusinessProfile((prev) => ({
+            ...prev,
+            tradeName: d.tradeName || prev.tradeName,
+            legalName: d.legalName || prev.legalName,
+            phone: d.phone || prev.phone,
+            email: d.email || prev.email,
+            address: d.address || prev.address,
+            city: d.city || prev.city,
+            state: d.state || prev.state,
+            pincode: d.pincode || prev.pincode,
+          }));
+        }
+      },
+      () => {}
+    );
+
+    const unsubGst = onSnapshot(
+      doc(db, "settings", "gst_settings"),
+      (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          setGstConfig({
+            enabled: !!d.enabled,
+            percentage: Number(d.gstPercentage) || 5,
+            pricingType: d.pricingType === "exclusive" ? "exclusive" : "inclusive",
+            gstNumber: d.gstNumber || "",
+          });
+        }
+      },
+      () => {}
     );
 
     return () => {
       unsubSales();
       unsubStores();
+      unsubProfile();
+      unsubGst();
     };
   }, []);
 
@@ -240,15 +310,107 @@ export default function WalkInSalesPage() {
     };
   }, [filteredSales]);
 
-  // Handle Reprint
+  // Helper: Resolve complete tax breakdown for any walk-in sale
+  const getSaleTaxSummary = (sale: WalkInSaleRecord) => {
+    const anySale = sale as any;
+    let subtotal = Number(sale.subtotal) || 0;
+    let discount = Number(sale.discount) || 0;
+    let taxableSubtotal = Number(sale.taxableSubtotal) || 0;
+    let cgst = Number(sale.cgst) || 0;
+    let sgst = Number(sale.sgst) || 0;
+    const grandTotal = Number(sale.grandTotal) || 0;
+    let gstPct = Number(anySale.gstPercentage) || (gstConfig.enabled ? gstConfig.percentage : 0);
+    const gstType = anySale.gstType || gstConfig.pricingType || "inclusive";
+
+    if (cgst <= 0 && sgst <= 0 && gstConfig.enabled && gstConfig.percentage > 0 && grandTotal > 0) {
+      gstPct = gstConfig.percentage;
+      const baseNet = Number((grandTotal / (1 + gstPct / 100)).toFixed(2));
+      const totalTax = Number((grandTotal - baseNet).toFixed(2));
+      const halfTax = Number((totalTax / 2).toFixed(2));
+      cgst = halfTax;
+      sgst = Number((totalTax - halfTax).toFixed(2));
+      taxableSubtotal = baseNet;
+      if (discount > 0) {
+        const baseDiscount = Number((discount / (1 + gstPct / 100)).toFixed(2));
+        discount = baseDiscount;
+        subtotal = Number((baseNet + baseDiscount).toFixed(2));
+      } else {
+        subtotal = baseNet;
+      }
+    } else if (taxableSubtotal <= 0 && subtotal > 0) {
+      taxableSubtotal = Number(Math.max(0, subtotal - discount).toFixed(2));
+    }
+
+    const totalGst = Number((cgst + sgst).toFixed(2));
+    const hasGst = totalGst > 0 || (gstPct > 0 && (anySale.isGstEnabled || gstConfig.enabled));
+    const cgstPct =
+      gstPct > 0
+        ? Number((gstPct / 2).toFixed(2))
+        : taxableSubtotal > 0 && cgst > 0
+        ? Number(((cgst / taxableSubtotal) * 100).toFixed(2))
+        : 0;
+    const sgstPct =
+      gstPct > 0
+        ? Number((gstPct / 2).toFixed(2))
+        : taxableSubtotal > 0 && sgst > 0
+        ? Number(((sgst / taxableSubtotal) * 100).toFixed(2))
+        : 0;
+    const expectedTotal = Number((taxableSubtotal + totalGst).toFixed(2));
+    const diff = Number((grandTotal - expectedTotal).toFixed(2));
+    const roundOff =
+      anySale.roundOff !== undefined
+        ? Number(anySale.roundOff)
+        : Math.abs(diff) >= 0.01 && Math.abs(diff) < 1
+        ? diff
+        : 0;
+
+    return {
+      subtotal,
+      discount,
+      taxableSubtotal,
+      cgst,
+      sgst,
+      totalGst,
+      gstPct: gstPct || Number((cgstPct + sgstPct).toFixed(2)),
+      cgstPct,
+      sgstPct,
+      gstType,
+      roundOff,
+      grandTotal,
+      hasGst,
+    };
+  };
+
+  // Handle Reprint with Complete Business, GST & Customer Details
   const handleReprintReceipt = async (sale: WalkInSaleRecord) => {
+    const tax = getSaleTaxSummary(sale);
+    const anySale = sale as any;
+    const storeObj = stores.find((s) => s.id === sale.storeId);
+    const fullBizAddress = [
+      businessProfile.address,
+      businessProfile.city,
+      businessProfile.state,
+      businessProfile.pincode,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
     await printReceipt({
       orderNumber: sale.billNumber || sale.orderNumber,
       dateStr: sale.deliveryDate || new Date().toISOString().split("T")[0],
       timeStr: sale.deliveryTime || "",
-      storeName: sale.storeName,
+      billTitle: tax.hasGst ? "TAX INVOICE" : "COUNTER BILL",
+      tradeName: businessProfile.tradeName || "Ravi Sweets & Cold Drinks",
+      legalName: businessProfile.legalName || "Ravi Sweets",
+      storeName: sale.storeName || storeObj?.name || "Main Chirala Store",
+      storePhone: storeObj?.phone || businessProfile.phone || "",
+      storeAddress: storeObj?.address || fullBizAddress || "Chirala, AP",
+      storeEmail: businessProfile.email || "",
+      gstNumber: anySale.gstNumber || gstConfig.gstNumber || "",
       customerName: sale.customerName,
       customerPhone: sale.customerPhone,
+      customerAddress: sale.customerAddress || "",
+      customerGstNumber: anySale.customerGstNumber || "",
       items: sale.items.map((i) => ({
         name: i.name,
         quantity: i.quantity,
@@ -256,15 +418,21 @@ export default function WalkInSalesPage() {
         rate: i.rate,
         totalAmount: i.totalAmount,
       })),
-      subtotal: sale.subtotal,
-      discount: sale.discount,
-      taxableSubtotal: sale.taxableSubtotal,
-      cgst: sale.cgst,
-      sgst: sale.sgst,
-      gstPercentage: (sale as any).gstPercentage,
-      cgstPercentage: (sale as any).gstPercentage ? (sale as any).gstPercentage / 2 : undefined,
-      sgstPercentage: (sale as any).gstPercentage ? (sale as any).gstPercentage / 2 : undefined,
-      grandTotal: sale.grandTotal,
+      subtotal: tax.subtotal,
+      discount: tax.discount,
+      taxableSubtotal: tax.taxableSubtotal,
+      cgst: tax.cgst,
+      sgst: tax.sgst,
+      gstPercentage: tax.gstPct,
+      cgstPercentage: tax.cgstPct,
+      sgstPercentage: tax.sgstPct,
+      isGstEnabled: tax.hasGst,
+      gstType: tax.gstType,
+      roundOff: tax.roundOff,
+      grandTotal: tax.grandTotal,
+      receivedAmount: tax.grandTotal,
+      balanceAmount: 0,
+      paymentStatus: sale.paymentStatus || "Done",
       paymentMethod: sale.paymentMethod,
       splitDetails: sale.splitDetails,
     });
@@ -744,54 +912,73 @@ export default function WalkInSalesPage() {
               </div>
 
               {/* Financial Breakdown */}
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 font-mono text-xs">
-                <div className="flex justify-between text-slate-600">
-                  <span>Subtotal:</span>
-                  <span>₹{viewingSale.subtotal.toFixed(2)}</span>
-                </div>
-                {viewingSale.discount > 0 && (
-                  <div className="flex justify-between text-emerald-600">
-                    <span>Discount:</span>
-                    <span>-₹{viewingSale.discount.toFixed(2)}</span>
+              {(() => {
+                const saleTax = getSaleTaxSummary(viewingSale);
+                const bizGst = (viewingSale as any).gstNumber || gstConfig.gstNumber || "";
+                return (
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 font-mono text-xs">
+                    {bizGst && (
+                      <div className="flex justify-between text-slate-500 text-[10px] pb-1 border-b border-slate-200">
+                        <span>Supplier GSTIN:</span>
+                        <span className="font-semibold text-slate-700">{bizGst}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-slate-600">
+                      <span>Items Subtotal:</span>
+                      <span>₹{saleTax.subtotal.toFixed(2)}</span>
+                    </div>
+                    {saleTax.discount > 0 && (
+                      <div className="flex justify-between text-emerald-600">
+                        <span>Discount:</span>
+                        <span>-₹{saleTax.discount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-slate-700 pt-1 border-t border-slate-200/70">
+                      <span>Taxable Value:</span>
+                      <span>₹{saleTax.taxableSubtotal.toFixed(2)}</span>
+                    </div>
+                    {saleTax.hasGst && (
+                      <>
+                        <div className="flex justify-between text-slate-500 text-[11px]">
+                          <span>CGST ({saleTax.cgstPct}%):</span>
+                          <span>₹{saleTax.cgst.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-500 text-[11px]">
+                          <span>SGST ({saleTax.sgstPct}%):</span>
+                          <span>₹{saleTax.sgst.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-700 text-[11px] font-medium">
+                          <span>Total GST ({saleTax.gstPct}% {saleTax.gstType === "exclusive" ? "Excl." : "Incl."}):</span>
+                          <span>₹{saleTax.totalGst.toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
+                    {Math.abs(saleTax.roundOff) >= 0.01 && (
+                      <div className="flex justify-between text-slate-500 text-[11px]">
+                        <span>Round Off:</span>
+                        <span>
+                          {saleTax.roundOff > 0 ? "+" : "-"}₹{Math.abs(saleTax.roundOff).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-slate-900">
+                      <span>Grand Total Paid:</span>
+                      <span className="text-[#348bdd]">₹{saleTax.grandTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-500 text-[11px] pt-1">
+                      <span>Payment Mode:</span>
+                      <span className="font-semibold text-slate-800">{viewingSale.paymentMethod}</span>
+                    </div>
+                    {viewingSale.paymentMethod === "Split" && viewingSale.splitDetails && (
+                      <div className="text-[10px] text-slate-600 bg-white px-2 py-1 rounded border border-slate-200 flex items-center justify-between">
+                        <span>Cash: ₹{viewingSale.splitDetails.cash || 0}</span>
+                        <span>UPI: ₹{viewingSale.splitDetails.upi || 0}</span>
+                        <span>Card: ₹{viewingSale.splitDetails.card || 0}</span>
+                      </div>
+                    )}
                   </div>
-                )}
-                {viewingSale.cgst > 0 && (
-                  <div className="flex justify-between text-slate-500 text-[11px]">
-                    <span>
-                      CGST (
-                      {(viewingSale as any).gstPercentage
-                        ? Number(((viewingSale as any).gstPercentage / 2).toFixed(2))
-                        : viewingSale.taxableSubtotal > 0
-                        ? Number(((viewingSale.cgst / viewingSale.taxableSubtotal) * 100).toFixed(1))
-                        : 2.5}
-                      %):
-                    </span>
-                    <span>₹{viewingSale.cgst.toFixed(2)}</span>
-                  </div>
-                )}
-                {viewingSale.sgst > 0 && (
-                  <div className="flex justify-between text-slate-500 text-[11px]">
-                    <span>
-                      SGST (
-                      {(viewingSale as any).gstPercentage
-                        ? Number(((viewingSale as any).gstPercentage / 2).toFixed(2))
-                        : viewingSale.taxableSubtotal > 0
-                        ? Number(((viewingSale.sgst / viewingSale.taxableSubtotal) * 100).toFixed(1))
-                        : 2.5}
-                      %):
-                    </span>
-                    <span>₹{viewingSale.sgst.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-slate-900">
-                  <span>Grand Total Paid:</span>
-                  <span className="text-[#348bdd]">₹{viewingSale.grandTotal}</span>
-                </div>
-                <div className="flex justify-between text-slate-500 text-[11px] pt-1">
-                  <span>Payment Mode:</span>
-                  <span className="font-semibold text-slate-800">{viewingSale.paymentMethod}</span>
-                </div>
-              </div>
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}

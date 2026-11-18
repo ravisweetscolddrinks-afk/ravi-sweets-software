@@ -84,6 +84,8 @@ interface CustomerOption {
   city?: string;
   email?: string;
   address?: string;
+  isB2b?: boolean;
+  gstNumber?: string;
 }
 
 interface StoreOption {
@@ -121,10 +123,35 @@ export default function PosBillingPage() {
   const [draftedBills, setDraftedBills] = useState<DraftedBill[]>([]);
   const [roundoffRules, setRoundoffRules] = useState<RoundoffRule[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
-  const [gstConfig, setGstConfig] = useState<{ enabled: boolean; percentage: number; pricingType: "inclusive" | "exclusive" }>({
+  const [gstConfig, setGstConfig] = useState<{
+    enabled: boolean;
+    percentage: number;
+    pricingType: "inclusive" | "exclusive";
+    gstNumber: string;
+  }>({
     enabled: true,
     percentage: 5,
     pricingType: "inclusive",
+    gstNumber: "",
+  });
+  const [businessProfile, setBusinessProfile] = useState<{
+    tradeName: string;
+    legalName: string;
+    phone: string;
+    email: string;
+    address: string;
+    city: string;
+    state: string;
+    pincode: string;
+  }>({
+    tradeName: "Ravi Sweets & Cold Drinks",
+    legalName: "Ravi Sweets",
+    phone: "",
+    email: "",
+    address: "",
+    city: "Chirala",
+    state: "Andhra Pradesh",
+    pincode: "",
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -227,6 +254,8 @@ export default function PosBillingPage() {
           city: d.data().city || "",
           email: d.data().email || "",
           address: d.data().address || "",
+          isB2b: !!d.data().isB2b,
+          gstNumber: d.data().gstNumber || "",
         }));
         setCustomers(list);
       },
@@ -246,6 +275,28 @@ export default function PosBillingPage() {
       (err) => console.warn("Drafts error:", err)
     );
 
+    // Business Profile Settings
+    const unsubProfile = onSnapshot(
+      doc(db, "settings", "business_profile"),
+      (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          setBusinessProfile((prev) => ({
+            ...prev,
+            tradeName: d.tradeName || prev.tradeName,
+            legalName: d.legalName || prev.legalName,
+            phone: d.phone || prev.phone,
+            email: d.email || prev.email,
+            address: d.address || prev.address,
+            city: d.city || prev.city,
+            state: d.state || prev.state,
+            pincode: d.pincode || prev.pincode,
+          }));
+        }
+      },
+      (err) => console.warn("Business profile error:", err)
+    );
+
     // GST Settings
     const unsubGst = onSnapshot(
       doc(db, "settings", "gst_settings"),
@@ -254,8 +305,9 @@ export default function PosBillingPage() {
           const d = snap.data();
           setGstConfig({
             enabled: !!d.enabled,
-            percentage: d.gstPercentage || 5,
+            percentage: Number(d.gstPercentage) || 5,
             pricingType: d.pricingType === "exclusive" ? "exclusive" : "inclusive",
+            gstNumber: d.gstNumber || "",
           });
         }
       },
@@ -280,6 +332,7 @@ export default function PosBillingPage() {
       unsubStores();
       unsubCustomers();
       unsubDrafts();
+      unsubProfile();
       unsubGst();
       unsubRules();
     };
@@ -369,6 +422,10 @@ export default function PosBillingPage() {
       }
     }
 
+    const totalGst = Number((cgst + sgst).toFixed(2));
+    const roundedGrandTotal = Math.round(grandTotal);
+    const roundOff = Number((roundedGrandTotal - grandTotal).toFixed(2));
+
     return {
       rawSubtotal,
       displaySubtotal,
@@ -377,7 +434,9 @@ export default function PosBillingPage() {
       taxableSubtotal,
       cgst,
       sgst,
-      grandTotal: Math.round(grandTotal),
+      totalGst,
+      roundOff,
+      grandTotal: roundedGrandTotal,
       exactGrandTotal: grandTotal,
     };
   }, [rawSubtotal, effectiveSubtotal, discountNum, gstConfig]);
@@ -435,6 +494,7 @@ export default function PosBillingPage() {
           return [...prev, newLine];
         }
       });
+      setProductSearch("");
     }
   };
 
@@ -655,6 +715,7 @@ export default function PosBillingPage() {
     setIsWeightModalOpen(false);
     setWeightModalProduct(null);
     setEditingLineId(null);
+    setProductSearch("");
   };
 
   // Update piece item quantity
@@ -846,6 +907,7 @@ export default function PosBillingPage() {
         customerName: currentCustomer?.name || "Walk-In Customer",
         customerPhone: currentCustomer?.phone || "",
         customerAddress: currentCustomer?.address || "",
+        customerGstNumber: currentCustomer?.gstNumber || "",
         items: cart.map((i) => ({
           id: i.lineId,
           productId: i.productId,
@@ -862,8 +924,14 @@ export default function PosBillingPage() {
         taxableSubtotal: financials.taxableSubtotal,
         cgst: financials.cgst,
         sgst: financials.sgst,
+        totalGst: financials.totalGst,
+        roundOff: financials.roundOff,
+        exactGrandTotal: financials.exactGrandTotal,
         isGstEnabled: gstConfig.enabled,
         gstPercentage: gstConfig.percentage,
+        cgstPercentage: gstConfig.percentage / 2,
+        sgstPercentage: gstConfig.percentage / 2,
+        gstNumber: gstConfig.gstNumber || "",
         gstType: gstConfig.pricingType,
         grandTotal: financials.grandTotal,
         receivedAmount: financials.grandTotal,
@@ -938,16 +1006,27 @@ export default function PosBillingPage() {
 
       showToast(`Bill #${billNumber} settled successfully!`, "success");
 
-      // 5. Trigger thermal receipt print with masked customer phone number
+      // 5. Trigger thermal receipt print with complete business, GST & customer details
+      const fullBizAddress = [businessProfile.address, businessProfile.city, businessProfile.state, businessProfile.pincode]
+        .filter(Boolean)
+        .join(", ");
+
       await printReceipt({
         orderNumber: billNumber,
         dateStr,
         timeStr,
+        billTitle: gstConfig.enabled ? "TAX INVOICE" : "COUNTER BILL",
+        tradeName: businessProfile.tradeName || "Ravi Sweets & Cold Drinks",
+        legalName: businessProfile.legalName || "Ravi Sweets",
         storeName: currentStore?.name || "Ravi Sweets - Chirala Main Store",
-        storePhone: currentStore?.phone || "+91 98480 12345",
-        storeAddress: currentStore?.address || "Station Road, Chirala, AP",
+        storePhone: currentStore?.phone || businessProfile.phone || "",
+        storeAddress: currentStore?.address || fullBizAddress || "Chirala, AP",
+        storeEmail: businessProfile.email || "",
+        gstNumber: gstConfig.gstNumber || "",
         customerName: currentCustomer?.name || "Walk-In Customer",
         customerPhone: currentCustomer?.phone || "",
+        customerAddress: currentCustomer?.address || "",
+        customerGstNumber: currentCustomer?.gstNumber || "",
         items: cart.map((i) => ({
           name: i.name,
           quantity: i.quantity,
@@ -963,7 +1042,13 @@ export default function PosBillingPage() {
         gstPercentage: gstConfig.percentage,
         cgstPercentage: gstConfig.percentage / 2,
         sgstPercentage: gstConfig.percentage / 2,
+        isGstEnabled: gstConfig.enabled,
+        gstType: gstConfig.pricingType,
+        roundOff: financials.roundOff,
         grandTotal: financials.grandTotal,
+        receivedAmount: financials.grandTotal,
+        balanceAmount: 0,
+        paymentStatus: "Done",
         paymentMethod: paymentMode,
         splitDetails:
           paymentMode === "Split"
@@ -1385,9 +1470,13 @@ export default function PosBillingPage() {
                 </div>
               )}
 
-              {/* GST Breakdown (if enabled) */}
-              {gstConfig.enabled && (financials.cgst > 0 || financials.sgst > 0) && (
+              {/* Taxable Value & Complete GST Breakdown */}
+              {gstConfig.enabled && (financials.cgst > 0 || financials.sgst > 0 || cart.length > 0) && (
                 <div className="pt-1.5 border-t border-slate-200/60 text-[11px] font-mono text-slate-600 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Taxable Value:</span>
+                    <span className="font-medium text-slate-800">₹{financials.taxableSubtotal.toFixed(2)}</span>
+                  </div>
                   <div className="flex justify-between">
                     <span>CGST ({gstConfig.percentage / 2}%):</span>
                     <span className="font-medium text-slate-800">₹{financials.cgst.toFixed(2)}</span>
@@ -1396,6 +1485,21 @@ export default function PosBillingPage() {
                     <span>SGST ({gstConfig.percentage / 2}%):</span>
                     <span className="font-medium text-slate-800">₹{financials.sgst.toFixed(2)}</span>
                   </div>
+                  <div className="flex justify-between text-slate-700 font-medium">
+                    <span>
+                      Total GST ({gstConfig.percentage}% {gstConfig.pricingType === "inclusive" ? "Incl." : "Excl."}):
+                    </span>
+                    <span>₹{financials.totalGst.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+
+              {Math.abs(financials.roundOff) >= 0.01 && (
+                <div className="flex justify-between text-[11px] font-mono text-slate-500">
+                  <span>Round Off:</span>
+                  <span>
+                    {financials.roundOff > 0 ? "+" : "-"}₹{Math.abs(financials.roundOff).toFixed(2)}
+                  </span>
                 </div>
               )}
 

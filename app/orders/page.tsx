@@ -249,10 +249,12 @@ export default function OrdersPage() {
     enabled: boolean;
     percentage: number;
     pricingType: "inclusive" | "exclusive";
+    gstNumber?: string;
   }>({
-    enabled: false,
+    enabled: true,
     percentage: 5,
     pricingType: "inclusive",
+    gstNumber: "",
   });
 
   const [businessProfile, setBusinessProfile] = useState<{
@@ -427,8 +429,9 @@ export default function OrdersPage() {
           const d = gstSnap.data();
           setGstConfig({
             enabled: !!d.enabled,
-            percentage: d.gstPercentage || 5,
+            percentage: Number(d.gstPercentage) || 5,
             pricingType: d.pricingType === "exclusive" ? "exclusive" : "inclusive",
+            gstNumber: d.gstNumber || "",
           });
           if (d.gstNumber) {
             setBusinessProfile((prev) => ({
@@ -767,6 +770,7 @@ export default function OrdersPage() {
           return [...prev, newItem];
         }
       });
+      setProductCatalogSearch("");
     }
   };
 
@@ -843,6 +847,7 @@ export default function OrdersPage() {
 
     setWeightModalProduct(null);
     setEditingWeightLineId(null);
+    setProductCatalogSearch("");
   };
 
   // Update piece item quantity in right panel
@@ -948,6 +953,7 @@ export default function OrdersPage() {
     setPaymentMethod("Cash");
     setSplitDetails({ cash: 0, upi: 0, card: 0 });
     setOrderStatus("Created");
+    setProductCatalogSearch("");
     setFormValidationErrors({});
     setIsOrderModalOpen(true);
   };
@@ -1069,6 +1075,7 @@ export default function OrdersPage() {
     setPaymentMethod(order.paymentMethod || "Cash");
     setSplitDetails(order.splitDetails || { cash: 0, upi: 0, card: 0 });
     setOrderStatus(order.orderStatus);
+    setProductCatalogSearch("");
     setFormValidationErrors({});
     setIsOrderModalOpen(true);
   };
@@ -1309,15 +1316,105 @@ export default function OrdersPage() {
     }
   };
 
-  // Helper for thermal print
+  // Helper: Resolve complete financial & GST breakdown for any order (handles both saved GST and live GST settings)
+  const getOrderTaxSummary = (order: OrderRecord) => {
+    let subtotal = Number(order.subtotal) || 0;
+    let discount = Number(order.discount) || 0;
+    let taxableSubtotal = Number(order.taxableSubtotal) || 0;
+    let cgst = Number(order.cgst) || 0;
+    let sgst = Number(order.sgst) || 0;
+    const grandTotal = Number(order.grandTotal) || 0;
+    let gstPct = Number(order.gstPercentage) || (gstConfig.enabled ? gstConfig.percentage : 0);
+    const gstType = order.gstType || gstConfig.pricingType || "inclusive";
+
+    // If order had 0 GST saved (e.g. created before GST enabled or while loading), derive inclusive breakdown when GST is enabled in settings
+    if (cgst <= 0 && sgst <= 0 && gstConfig.enabled && gstConfig.percentage > 0 && grandTotal > 0) {
+      gstPct = gstConfig.percentage;
+      const baseNet = Number((grandTotal / (1 + gstPct / 100)).toFixed(2));
+      const totalTax = Number((grandTotal - baseNet).toFixed(2));
+      const halfTax = Number((totalTax / 2).toFixed(2));
+      cgst = halfTax;
+      sgst = Number((totalTax - halfTax).toFixed(2));
+      taxableSubtotal = baseNet;
+      if (discount > 0) {
+        const baseDiscount = Number((discount / (1 + gstPct / 100)).toFixed(2));
+        discount = baseDiscount;
+        subtotal = Number((baseNet + baseDiscount).toFixed(2));
+      } else {
+        subtotal = baseNet;
+      }
+    } else if (taxableSubtotal <= 0 && subtotal > 0) {
+      taxableSubtotal = Number(Math.max(0, subtotal - discount).toFixed(2));
+    }
+
+    const totalGst = Number((cgst + sgst).toFixed(2));
+    const hasGst = totalGst > 0 || (gstPct > 0 && (order.isGstEnabled || gstConfig.enabled));
+    const cgstPct =
+      gstPct > 0
+        ? Number((gstPct / 2).toFixed(2))
+        : taxableSubtotal > 0 && cgst > 0
+        ? Number(((cgst / taxableSubtotal) * 100).toFixed(2))
+        : 0;
+    const sgstPct =
+      gstPct > 0
+        ? Number((gstPct / 2).toFixed(2))
+        : taxableSubtotal > 0 && sgst > 0
+        ? Number(((sgst / taxableSubtotal) * 100).toFixed(2))
+        : 0;
+    const expectedTotal = Number((taxableSubtotal + totalGst).toFixed(2));
+    const diff = Number((grandTotal - expectedTotal).toFixed(2));
+    const roundOff = Math.abs(diff) >= 0.01 && Math.abs(diff) < 1 ? diff : 0;
+
+    return {
+      subtotal,
+      discount,
+      taxableSubtotal,
+      cgst,
+      sgst,
+      totalGst,
+      gstPct: gstPct || Number((cgstPct + sgstPct).toFixed(2)),
+      cgstPct,
+      sgstPct,
+      gstType,
+      roundOff,
+      grandTotal,
+      hasGst,
+    };
+  };
+
+  // Helper for thermal print (passes complete business, GST, customer & payment details)
   const handlePrintThermal = (order: OrderRecord) => {
+    const tax = getOrderTaxSummary(order);
+    const storeObj = storesList.find((s) => s.id === order.storeId);
+    const fullBizAddress = [
+      businessProfile.address,
+      businessProfile.city,
+      businessProfile.state,
+      businessProfile.pincode,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
     printReceipt({
       orderNumber: order.orderNumber,
-      dateStr: order.deliveryDate || new Date().toISOString().split("T")[0],
+      dateStr: order.createdAt?.toDate
+        ? order.createdAt.toDate().toISOString().split("T")[0]
+        : order.deliveryDate || new Date().toISOString().split("T")[0],
       timeStr: order.deliveryTime || "",
-      storeName: order.storeName,
+      deliveryDate: order.deliveryDate || "",
+      deliveryTime: order.deliveryTime || "",
+      billTitle: tax.hasGst ? "TAX INVOICE" : "ORDER RECEIPT",
+      tradeName: businessProfile.tradeName || "Ravi Sweets & Cold Drinks",
+      legalName: businessProfile.legalName || "Ravi Sweets",
+      storeName: order.storeName || storeObj?.name || "Main Chirala Store",
+      storePhone: storeObj?.phone || businessProfile.phone || "",
+      storeAddress: storeObj?.address || fullBizAddress || "Chirala, AP",
+      storeEmail: businessProfile.email || "",
+      gstNumber: businessProfile.gstNumber || gstConfig.gstNumber || "",
       customerName: order.customerName,
       customerPhone: order.customerPhone,
+      customerAddress: order.customerAddress || "",
+      customerGstNumber: order.customerGstNumber || "",
       items: order.items.map((i) => ({
         name: i.name,
         quantity: i.quantity,
@@ -1325,17 +1422,24 @@ export default function OrdersPage() {
         rate: i.rate,
         totalAmount: i.totalAmount,
       })),
-      subtotal: order.subtotal,
-      discount: order.discount,
-      taxableSubtotal: order.taxableSubtotal,
-      cgst: order.cgst,
-      sgst: order.sgst,
-      gstPercentage: order.gstPercentage,
-      cgstPercentage: order.gstPercentage ? order.gstPercentage / 2 : undefined,
-      sgstPercentage: order.gstPercentage ? order.gstPercentage / 2 : undefined,
-      grandTotal: order.grandTotal,
+      subtotal: tax.subtotal,
+      discount: tax.discount,
+      taxableSubtotal: tax.taxableSubtotal,
+      cgst: tax.cgst,
+      sgst: tax.sgst,
+      gstPercentage: tax.gstPct,
+      cgstPercentage: tax.cgstPct,
+      sgstPercentage: tax.sgstPct,
+      isGstEnabled: tax.hasGst,
+      gstType: tax.gstType,
+      roundOff: tax.roundOff,
+      grandTotal: tax.grandTotal,
+      receivedAmount: Number(order.receivedAmount) || 0,
+      balanceAmount: Number(order.balanceAmount) || 0,
+      paymentStatus: order.paymentStatus || "Unpaid",
       paymentMethod: order.paymentMethod,
       splitDetails: order.splitDetails,
+      packingDescription: order.packingDescription || "",
     });
   };
 
@@ -2495,9 +2599,13 @@ export default function OrdersPage() {
                     </div>
                   )}
 
-                  {/* GST Breakdown (if enabled) */}
-                  {gstConfig.enabled && (calculatedFinancials.cgst > 0 || calculatedFinancials.sgst > 0) && (
+                  {/* Taxable Value & Complete GST Breakdown */}
+                  {gstConfig.enabled && (calculatedFinancials.cgst > 0 || calculatedFinancials.sgst > 0 || selectedItems.length > 0) && (
                     <div className="space-y-1 pt-1 border-t border-slate-200 text-slate-600 font-mono text-[11px]">
+                      <div className="flex justify-between">
+                        <span>Taxable Value:</span>
+                        <span className="font-medium text-slate-800">₹{calculatedFinancials.taxableSubtotal.toFixed(2)}</span>
+                      </div>
                       <div className="flex justify-between">
                         <span>CGST ({gstConfig.percentage / 2}%):</span>
                         <span className="font-medium text-slate-800">₹{calculatedFinancials.cgst.toFixed(2)}</span>
@@ -2505,6 +2613,12 @@ export default function OrdersPage() {
                       <div className="flex justify-between">
                         <span>SGST ({gstConfig.percentage / 2}%):</span>
                         <span className="font-medium text-slate-800">₹{calculatedFinancials.sgst.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-700 font-medium">
+                        <span>
+                          Total GST ({gstConfig.percentage}% {gstConfig.pricingType === "inclusive" ? "Incl." : "Excl."}):
+                        </span>
+                        <span>₹{(calculatedFinancials.cgst + calculatedFinancials.sgst).toFixed(2)}</span>
                       </div>
                     </div>
                   )}
@@ -3507,72 +3621,95 @@ export default function OrdersPage() {
                 </div>
 
                 {/* Right: Detailed Bill Summary */}
-                <div
-                  className="p-4 rounded-lg border bg-slate-50/60 space-y-2 text-xs font-mono"
-                  style={{ borderColor: "var(--color-border-subtle)" }}
-                >
-                  <div className="flex justify-between text-slate-600">
-                    <span>Subtotal:</span>
-                    <span>₹{viewingOrder.subtotal.toFixed(2)}</span>
-                  </div>
-
-                  {viewingOrder.discount > 0 && (
-                    <div className="flex justify-between text-emerald-600">
-                      <span>Discount:</span>
-                      <span>-₹{viewingOrder.discount.toFixed(2)}</span>
-                    </div>
-                  )}
-
-                  {viewingOrder.isGstEnabled && viewingOrder.gstPercentage > 0 && (
-                    <div className="space-y-1 pt-1 border-t border-slate-200/70 text-slate-600">
-                      <div className="flex justify-between text-[11px]">
-                        <span>CGST ({viewingOrder.gstPercentage / 2}%):</span>
-                        <span>₹{viewingOrder.cgst.toFixed(2)}</span>
+                {(() => {
+                  const viewTax = getOrderTaxSummary(viewingOrder);
+                  return (
+                    <div
+                      className="p-4 rounded-lg border bg-slate-50/60 space-y-2 text-xs font-mono"
+                      style={{ borderColor: "var(--color-border-subtle)" }}
+                    >
+                      <div className="flex justify-between text-slate-600">
+                        <span>Items Subtotal:</span>
+                        <span>₹{viewTax.subtotal.toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between text-[11px]">
-                        <span>SGST ({viewingOrder.gstPercentage / 2}%):</span>
-                        <span>₹{viewingOrder.sgst.toFixed(2)}</span>
+
+                      {viewTax.discount > 0 && (
+                        <div className="flex justify-between text-emerald-600">
+                          <span>Discount:</span>
+                          <span>-₹{viewTax.discount.toFixed(2)}</span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between text-slate-700 pt-1 border-t border-slate-200/70">
+                        <span>Taxable Value:</span>
+                        <span>₹{viewTax.taxableSubtotal.toFixed(2)}</span>
+                      </div>
+
+                      {viewTax.hasGst && (
+                        <div className="space-y-1 pt-1 border-t border-slate-200/70 text-slate-600">
+                          <div className="flex justify-between text-[11px]">
+                            <span>CGST ({viewTax.cgstPct}%):</span>
+                            <span>₹{viewTax.cgst.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-[11px]">
+                            <span>SGST ({viewTax.sgstPct}%):</span>
+                            <span>₹{viewTax.sgst.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-[11px] font-medium text-slate-700">
+                            <span>Total GST ({viewTax.gstPct}% {viewTax.gstType === "exclusive" ? "Excl." : "Incl."}):</span>
+                            <span>₹{viewTax.totalGst.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {Math.abs(viewTax.roundOff) >= 0.01 && (
+                        <div className="flex justify-between text-[11px] text-slate-500">
+                          <span>Round Off:</span>
+                          <span>
+                            {viewTax.roundOff > 0 ? "+" : "-"}₹{Math.abs(viewTax.roundOff).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+
+                      <div
+                        className="flex justify-between text-sm font-semibold text-slate-900 pt-2 border-t font-mono"
+                        style={{ borderColor: "var(--color-border-base)" }}
+                      >
+                        <span>Grand Total:</span>
+                        <span className="text-base text-[var(--color-brand-primary)]">
+                          ₹{viewTax.grandTotal.toFixed(2)}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between text-emerald-600 pt-1 font-medium">
+                        <span>Total Paid So Far:</span>
+                        <span>₹{viewingOrder.receivedAmount.toFixed(2)}</span>
+                      </div>
+
+                      <div
+                        className={`flex justify-between pt-1 border-t font-semibold ${
+                          viewingOrder.balanceAmount > 0 ? "text-rose-600" : "text-emerald-600"
+                        }`}
+                        style={{ borderColor: "var(--color-border-subtle)" }}
+                      >
+                        <span>
+                          {viewingOrder.balanceAmount > 0
+                            ? "Balance Due:"
+                            : viewingOrder.balanceAmount < 0
+                            ? "Change Return:"
+                            : "Balance Status:"}
+                        </span>
+                        <span>
+                          {viewingOrder.balanceAmount > 0
+                            ? `₹${viewingOrder.balanceAmount.toFixed(2)}`
+                            : viewingOrder.balanceAmount < 0
+                            ? `₹${Math.abs(viewingOrder.balanceAmount).toFixed(2)}`
+                            : "Fully Paid ✓"}
+                        </span>
                       </div>
                     </div>
-                  )}
-
-                  <div
-                    className="flex justify-between text-sm font-semibold text-slate-900 pt-2 border-t font-mono"
-                    style={{ borderColor: "var(--color-border-base)" }}
-                  >
-                    <span>Grand Total:</span>
-                    <span className="text-base text-[var(--color-brand-primary)]">
-                      ₹{viewingOrder.grandTotal.toFixed(2)}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between text-emerald-600 pt-1 font-medium">
-                    <span>Total Paid So Far:</span>
-                    <span>₹{viewingOrder.receivedAmount.toFixed(2)}</span>
-                  </div>
-
-                  <div
-                    className={`flex justify-between pt-1 border-t font-semibold ${
-                      viewingOrder.balanceAmount > 0 ? "text-rose-600" : "text-emerald-600"
-                    }`}
-                    style={{ borderColor: "var(--color-border-subtle)" }}
-                  >
-                    <span>
-                      {viewingOrder.balanceAmount > 0
-                        ? "Balance Due:"
-                        : viewingOrder.balanceAmount < 0
-                        ? "Change Return:"
-                        : "Balance Status:"}
-                    </span>
-                    <span>
-                      {viewingOrder.balanceAmount > 0
-                        ? `₹${viewingOrder.balanceAmount.toFixed(2)}`
-                        : viewingOrder.balanceAmount < 0
-                        ? `₹${Math.abs(viewingOrder.balanceAmount).toFixed(2)}`
-                        : "Fully Paid ✓"}
-                    </span>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -4031,6 +4168,13 @@ export default function OrdersPage() {
           `}} />
 
           {/* A4 Invoice Paper Sheet */}
+          {(() => {
+            const invTax = getOrderTaxSummary(a4InvoiceOrder);
+            const resolvedBizGst = businessProfile.gstNumber || gstConfig.gstNumber || "";
+            const invoiceCreatedDate = a4InvoiceOrder.createdAt?.toDate
+              ? a4InvoiceOrder.createdAt.toDate().toISOString().split("T")[0]
+              : a4InvoiceOrder.deliveryDate || new Date().toISOString().split("T")[0];
+            return (
           <div
             id="a4-invoice-sheet"
             className="w-full max-w-[210mm] min-h-[297mm] bg-white text-slate-900 p-8 sm:p-10 shadow-2xl rounded-sm print:shadow-none print:max-w-none print:w-full border border-slate-200 flex flex-col justify-between"
@@ -4051,13 +4195,13 @@ export default function OrdersPage() {
                   <div className="text-xs text-slate-700 font-mono mt-1.5 space-y-0.5">
                     <div>Phone: <span className="text-slate-900">{businessProfile.phone || "+91 94402 61276"}</span> {businessProfile.altPhone && ` / ${businessProfile.altPhone}`}</div>
                     <div>Email: <span className="text-slate-900">{businessProfile.email || "contact@ravisweets.com"}</span></div>
-                    <div>GSTIN: <span className="font-medium text-slate-900">{businessProfile.gstNumber || "37AAAAA0000A1Z5"}</span></div>
+                    <div>GSTIN: <span className="font-medium text-slate-900">{resolvedBizGst || "Not Configured"}</span></div>
                   </div>
                 </div>
 
                 <div className="text-right shrink-0">
                   <div className="inline-block px-3 py-1 bg-slate-900 text-white text-xs font-medium uppercase tracking-wider rounded-xs">
-                    Tax Invoice
+                    {invTax.hasGst ? "Tax Invoice" : "Bill of Supply"}
                   </div>
                   <div className="mt-3 text-xs font-mono space-y-1">
                     <div>
@@ -4066,16 +4210,28 @@ export default function OrdersPage() {
                     </div>
                     <div>
                       <span className="text-slate-500">Invoice Date: </span>
-                      <span className="text-slate-900">{a4InvoiceOrder.deliveryDate || new Date().toISOString().split("T")[0]}</span>
+                      <span className="text-slate-900">{invoiceCreatedDate}</span>
                     </div>
                     <div>
-                      <span className="text-slate-500">Delivery Time: </span>
-                      <span className="text-slate-900">{a4InvoiceOrder.deliveryTime || "11:00 AM"}</span>
+                      <span className="text-slate-500">Delivery Date & Time: </span>
+                      <span className="text-slate-900">
+                        {a4InvoiceOrder.deliveryDate || invoiceCreatedDate} • {a4InvoiceOrder.deliveryTime || "11:00 AM"}
+                      </span>
                     </div>
                     <div>
                       <span className="text-slate-500">Store / Branch: </span>
                       <span className="text-slate-900">{a4InvoiceOrder.storeName || "Main Chirala Store"}</span>
                     </div>
+                    <div>
+                      <span className="text-slate-500">Order Status: </span>
+                      <span className="text-slate-900">{a4InvoiceOrder.orderStatus || "Created"}</span>
+                    </div>
+                    {invTax.hasGst && (
+                      <div>
+                        <span className="text-slate-500">GST Pricing: </span>
+                        <span className="text-slate-900 capitalize">{invTax.gstType} ({invTax.gstPct}%)</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -4093,11 +4249,11 @@ export default function OrdersPage() {
                     <div className="text-slate-600">{businessProfile.city || "Chirala"}, {businessProfile.state || "Andhra Pradesh"} - {businessProfile.pincode || "523155"}</div>
                     <div className="font-mono text-[11px] pt-1">
                       <span className="text-slate-500">GSTIN: </span>
-                      <span className="font-medium text-slate-900">{businessProfile.gstNumber || "37AAAAA0000A1Z5"}</span>
+                      <span className="font-medium text-slate-900">{resolvedBizGst || "Not Configured"}</span>
                     </div>
                     <div className="font-mono text-[11px]">
                       <span className="text-slate-500">State: </span>
-                      <span>Andhra Pradesh (Code: 37)</span>
+                      <span>{businessProfile.state || "Andhra Pradesh"} (Code: 37)</span>
                     </div>
                   </div>
                 </div>
@@ -4153,6 +4309,11 @@ export default function OrdersPage() {
                               Note: {item.manufacturingDescription}
                             </div>
                           )}
+                          {item.roundOffApplied && item.originalWeight && (
+                            <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                              Scale Weight: {item.originalWeight} {item.unit} → Billed: {item.quantity} {item.unit}
+                            </div>
+                          )}
                         </td>
                         <td className="py-2.5 px-3 text-center border-r border-slate-200 font-mono uppercase text-[11px] text-slate-600">
                           {item.unit}
@@ -4171,6 +4332,19 @@ export default function OrdersPage() {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-50 border-t border-slate-300 text-slate-800 font-mono text-[11px]">
+                      <td colSpan={4} className="py-2 px-3 font-medium border-r border-slate-300">
+                        Total Line Items: {a4InvoiceOrder.items.length}
+                      </td>
+                      <td className="py-2 px-3 text-right font-medium border-r border-slate-300">
+                        Total:
+                      </td>
+                      <td className="py-2 px-3 text-right font-medium text-slate-900">
+                        ₹{a4InvoiceOrder.items.reduce((sum, i) => sum + Number(i.totalAmount || 0), 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
 
@@ -4184,7 +4358,7 @@ export default function OrdersPage() {
                     </span>
                     <p className="font-medium text-slate-900 italic text-xs">
                       {(() => {
-                        const num = a4InvoiceOrder.grandTotal;
+                        const num = invTax.grandTotal;
                         if (!num || isNaN(num) || num <= 0) return "Zero Rupees Only";
                         const a = ["", "One ", "Two ", "Three ", "Four ", "Five ", "Six ", "Seven ", "Eight ", "Nine ", "Ten ", "Eleven ", "Twelve ", "Thirteen ", "Fourteen ", "Fifteen ", "Sixteen ", "Seventeen ", "Eighteen ", "Nineteen "];
                         const b = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
@@ -4195,6 +4369,7 @@ export default function OrdersPage() {
                           return str;
                         };
                         const integerPart = Math.floor(num);
+                        const paisePart = Math.round((num - integerPart) * 100);
                         let res = "";
                         const crore = Math.floor(integerPart / 10000000);
                         const lakh = Math.floor((integerPart % 10000000) / 100000);
@@ -4204,7 +4379,9 @@ export default function OrdersPage() {
                         if (lakh > 0) res += formatSection(lakh) + "Lakh ";
                         if (thousand > 0) res += formatSection(thousand) + "Thousand ";
                         if (rem > 0) res += formatSection(rem);
-                        return (res.trim() || "Zero") + " Rupees Only";
+                        const rupeesWords = (res.trim() || "Zero") + " Rupees";
+                        const paiseWords = paisePart > 0 ? ` and ${formatSection(paisePart).trim()} Paise` : "";
+                        return `${rupeesWords}${paiseWords} Only`;
                       })()}
                     </p>
                   </div>
@@ -4217,6 +4394,13 @@ export default function OrdersPage() {
                       <span className="text-slate-600">Payment Mode:</span>
                       <span className="font-medium text-slate-900">{a4InvoiceOrder.paymentMethod}</span>
                     </div>
+                    {a4InvoiceOrder.paymentMethod === "Split" && a4InvoiceOrder.splitDetails && (
+                      <div className="text-[10px] font-mono text-slate-600 bg-white px-2 py-1 rounded border border-slate-200 flex items-center justify-between">
+                        <span>Cash: ₹{Number(a4InvoiceOrder.splitDetails.cash || 0).toFixed(2)}</span>
+                        <span>UPI: ₹{Number(a4InvoiceOrder.splitDetails.upi || 0).toFixed(2)}</span>
+                        <span>Card: ₹{Number(a4InvoiceOrder.splitDetails.card || 0).toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between font-mono text-[11px]">
                       <span className="text-slate-600">Payment Status:</span>
                       <span className="font-medium text-slate-900">{a4InvoiceOrder.paymentStatus}</span>
@@ -4230,71 +4414,66 @@ export default function OrdersPage() {
                   </div>
                 </div>
 
-                {/* Right: Calculations Table */}
+                {/* Right: Complete Calculations & Tax Breakdown Table */}
                 <div className="space-y-1.5 text-xs font-mono">
                   <div className="flex justify-between py-1 text-slate-700">
                     <span>Items Subtotal:</span>
-                    <span>₹{Number(a4InvoiceOrder.subtotal).toFixed(2)}</span>
+                    <span>₹{invTax.subtotal.toFixed(2)}</span>
                   </div>
 
-                  {a4InvoiceOrder.discount > 0 && (
+                  {invTax.discount > 0 && (
                     <div className="flex justify-between py-1 text-emerald-700">
                       <span>Discount:</span>
-                      <span>-₹{Number(a4InvoiceOrder.discount).toFixed(2)}</span>
+                      <span>-₹{invTax.discount.toFixed(2)}</span>
                     </div>
                   )}
 
                   <div className="flex justify-between py-1 text-slate-700 border-t border-slate-200">
                     <span>Taxable Value:</span>
-                    <span>₹{Number(a4InvoiceOrder.taxableSubtotal).toFixed(2)}</span>
+                    <span>₹{invTax.taxableSubtotal.toFixed(2)}</span>
                   </div>
 
-                  {(a4InvoiceOrder.cgst > 0 || a4InvoiceOrder.sgst > 0) && (
+                  {invTax.hasGst && (
                     <>
-                      {a4InvoiceOrder.cgst > 0 && (
-                        <div className="flex justify-between py-1 text-slate-600 text-[11px]">
-                          <span>
-                            CGST (
-                            {a4InvoiceOrder.gstPercentage
-                              ? Number((a4InvoiceOrder.gstPercentage / 2).toFixed(2))
-                              : a4InvoiceOrder.taxableSubtotal > 0
-                              ? Number(((a4InvoiceOrder.cgst / a4InvoiceOrder.taxableSubtotal) * 100).toFixed(1))
-                              : 2.5}
-                            %):
-                          </span>
-                          <span>₹{Number(a4InvoiceOrder.cgst).toFixed(2)}</span>
-                        </div>
-                      )}
-                      {a4InvoiceOrder.sgst > 0 && (
-                        <div className="flex justify-between py-1 text-slate-600 text-[11px]">
-                          <span>
-                            SGST (
-                            {a4InvoiceOrder.gstPercentage
-                              ? Number((a4InvoiceOrder.gstPercentage / 2).toFixed(2))
-                              : a4InvoiceOrder.taxableSubtotal > 0
-                              ? Number(((a4InvoiceOrder.sgst / a4InvoiceOrder.taxableSubtotal) * 100).toFixed(1))
-                              : 2.5}
-                            %):
-                          </span>
-                          <span>₹{Number(a4InvoiceOrder.sgst).toFixed(2)}</span>
-                        </div>
-                      )}
+                      <div className="flex justify-between py-0.5 text-slate-600 text-[11px]">
+                        <span>CGST ({invTax.cgstPct}%):</span>
+                        <span>₹{invTax.cgst.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between py-0.5 text-slate-600 text-[11px]">
+                        <span>SGST ({invTax.sgstPct}%):</span>
+                        <span>₹{invTax.sgst.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between py-1 text-slate-800 text-[11px] font-medium border-t border-dashed border-slate-200">
+                        <span>Total GST ({invTax.gstPct}% {invTax.gstType === "exclusive" ? "Excl." : "Incl."}):</span>
+                        <span>₹{invTax.totalGst.toFixed(2)}</span>
+                      </div>
                     </>
+                  )}
+
+                  {Math.abs(invTax.roundOff) >= 0.01 && (
+                    <div className="flex justify-between py-0.5 text-slate-600 text-[11px]">
+                      <span>Round Off:</span>
+                      <span>
+                        {invTax.roundOff > 0 ? "+" : "-"}₹{Math.abs(invTax.roundOff).toFixed(2)}
+                      </span>
+                    </div>
                   )}
 
                   <div className="flex justify-between py-2 border-t-2 border-b-2 border-slate-900 text-sm font-medium text-slate-900 bg-slate-50 px-2 rounded-xs">
                     <span>Grand Total:</span>
-                    <span>₹{Number(a4InvoiceOrder.grandTotal).toFixed(2)}</span>
+                    <span>₹{invTax.grandTotal.toFixed(2)}</span>
                   </div>
 
                   <div className="flex justify-between py-1 text-emerald-700">
                     <span>Amount Paid:</span>
-                    <span>₹{Number(a4InvoiceOrder.receivedAmount).toFixed(2)}</span>
+                    <span>₹{Number(a4InvoiceOrder.receivedAmount || 0).toFixed(2)}</span>
                   </div>
 
-                  <div className="flex justify-between py-1 text-rose-700 font-medium border-t border-slate-200">
-                    <span>Balance Due:</span>
-                    <span>₹{Number(a4InvoiceOrder.balanceAmount).toFixed(2)}</span>
+                  <div className={`flex justify-between py-1 font-medium border-t border-slate-200 ${Number(a4InvoiceOrder.balanceAmount || 0) > 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                    <span>
+                      {Number(a4InvoiceOrder.balanceAmount || 0) < 0 ? "Change Return:" : "Balance Due:"}
+                    </span>
+                    <span>₹{Math.abs(Number(a4InvoiceOrder.balanceAmount || 0)).toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -4331,6 +4510,8 @@ export default function OrdersPage() {
               </div>
             </div>
           </div>
+            );
+          })()}
         </div>
       )}
 

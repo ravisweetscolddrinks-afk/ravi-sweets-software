@@ -265,12 +265,18 @@ export default function QuotationsPage() {
         const d = snap.data();
         const conf = {
           enabled: d.enabled !== false,
-          percentage: d.gstPercentage || 5,
+          percentage: Number(d.gstPercentage) || 5,
           pricingType: d.pricingType === "exclusive" ? ("exclusive" as const) : ("inclusive" as const),
         };
         setGstConfig(conf);
         setIsGstEnabled(conf.enabled);
         setGstPercentage(conf.percentage);
+        if (d.gstNumber) {
+          setBusinessProfile((prev) => ({
+            ...prev,
+            gstNumber: d.gstNumber,
+          }));
+        }
       }
     });
 
@@ -794,11 +800,16 @@ export default function QuotationsPage() {
         orderNumber: `QT-${q.quotationNumber}`,
         dateStr: q.quotationDate,
         timeStr: "Quote Estimate",
+        billTitle: "QUOTATION ESTIMATE",
+        tradeName: q.fromDetails.tradeName || businessProfile.tradeName || "Ravi Sweets Chirala",
         storeName: q.fromDetails.tradeName || "Ravi Sweets Chirala",
-        storePhone: q.fromDetails.phone || "",
-        storeAddress: q.fromDetails.address || "Station Road, Chirala",
+        storePhone: q.fromDetails.phone || businessProfile.phone || "",
+        storeAddress: q.fromDetails.address || businessProfile.address || "Chirala, AP",
+        storeEmail: q.fromDetails.email || businessProfile.email || "",
         customerName: q.toDetails.customerName,
         customerPhone: q.toDetails.phone,
+        customerAddress: q.toDetails.address || "",
+        customerGstNumber: q.toDetails.gstNumber || "",
         items: q.items.map((i) => ({
           name: i.name,
           quantity: i.quantity,
@@ -814,9 +825,11 @@ export default function QuotationsPage() {
         gstPercentage: q.isGstEnabled ? q.gstPercentage : undefined,
         cgstPercentage: q.isGstEnabled ? q.gstPercentage / 2 : undefined,
         sgstPercentage: q.isGstEnabled ? q.gstPercentage / 2 : undefined,
+        isGstEnabled: q.isGstEnabled,
+        gstType: (q as any).gstType || gstConfig.pricingType,
         grandTotal: q.grandTotal,
         paymentMethod: "QUOTATION ESTIMATE",
-        gstNumber: q.fromDetails.gstNumber,
+        gstNumber: q.fromDetails.gstNumber || businessProfile.gstNumber || "",
       });
       showToast(`Sent quotation #${q.quotationNumber} to thermal printer`, "success");
     } catch (err: any) {
@@ -2102,7 +2115,7 @@ export default function QuotationsPage() {
               {/* Financials Breakdown */}
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1 font-mono">
                 <div className="flex justify-between text-slate-600">
-                  <span>Subtotal:</span>
+                  <span>Items Subtotal:</span>
                   <span>₹{viewingQuotation.subtotal.toFixed(2)}</span>
                 </div>
                 {viewingQuotation.discount > 0 && (
@@ -2111,11 +2124,25 @@ export default function QuotationsPage() {
                     <span>-₹{viewingQuotation.discount.toFixed(2)}</span>
                   </div>
                 )}
+                <div className="flex justify-between text-slate-700 pt-1 border-t border-slate-200">
+                  <span>Taxable Value:</span>
+                  <span>₹{viewingQuotation.taxableSubtotal.toFixed(2)}</span>
+                </div>
                 {viewingQuotation.isGstEnabled && (
-                  <div className="flex justify-between text-slate-600">
-                    <span>GST ({viewingQuotation.gstPercentage}%):</span>
-                    <span>₹{(viewingQuotation.cgst + viewingQuotation.sgst).toFixed(2)}</span>
-                  </div>
+                  <>
+                    <div className="flex justify-between text-slate-600 text-[11px]">
+                      <span>CGST ({(viewingQuotation.gstPercentage / 2).toFixed(2)}%):</span>
+                      <span>₹{viewingQuotation.cgst.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-600 text-[11px]">
+                      <span>SGST ({(viewingQuotation.gstPercentage / 2).toFixed(2)}%):</span>
+                      <span>₹{viewingQuotation.sgst.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-800 text-[11px] font-medium">
+                      <span>Total GST ({viewingQuotation.gstPercentage}%):</span>
+                      <span>₹{(viewingQuotation.cgst + viewingQuotation.sgst).toFixed(2)}</span>
+                    </div>
+                  </>
                 )}
                 <div className="flex justify-between text-sm font-bold text-slate-900 pt-1.5 border-t border-slate-200">
                   <span>Grand Total:</span>
@@ -2240,9 +2267,9 @@ export default function QuotationsPage() {
                 <p className="text-xs text-slate-600">
                   Phone: {printingQuotation.fromDetails.phone} | Email: {printingQuotation.fromDetails.email || "info@ravisweets.com"}
                 </p>
-                {printingQuotation.fromDetails.gstNumber && (
+              {(printingQuotation.fromDetails.gstNumber || businessProfile.gstNumber) && (
                   <p className="text-xs font-mono font-bold text-slate-800">
-                    GSTIN: {printingQuotation.fromDetails.gstNumber}
+                    GSTIN: {printingQuotation.fromDetails.gstNumber || businessProfile.gstNumber}
                   </p>
                 )}
               </div>
@@ -2348,16 +2375,20 @@ export default function QuotationsPage() {
               {printingQuotation.isGstEnabled && (
                 <>
                   <div className="flex justify-between">
-                    <span>Taxable Subtotal:</span>
+                    <span>Taxable Value:</span>
                     <span>₹{printingQuotation.taxableSubtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>CGST ({(printingQuotation.gstPercentage / 2).toFixed(1)}%):</span>
+                    <span>CGST ({(printingQuotation.gstPercentage / 2).toFixed(2)}%):</span>
                     <span>₹{printingQuotation.cgst.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>SGST ({(printingQuotation.gstPercentage / 2).toFixed(1)}%):</span>
+                    <span>SGST ({(printingQuotation.gstPercentage / 2).toFixed(2)}%):</span>
                     <span>₹{printingQuotation.sgst.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-slate-800 border-t border-dashed border-slate-300 pt-1">
+                    <span>Total GST ({printingQuotation.gstPercentage}%):</span>
+                    <span>₹{(printingQuotation.cgst + printingQuotation.sgst).toFixed(2)}</span>
                   </div>
                 </>
               )}

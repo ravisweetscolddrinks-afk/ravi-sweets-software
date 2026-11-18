@@ -116,6 +116,7 @@ export default function ProductsPage() {
   const [totalCount, setTotalCount] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("all");
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -265,26 +266,78 @@ export default function ProductsPage() {
     };
   }, []);
 
-  // Search filtering
-  const filteredProducts = useMemo(() => {
+  // Deduplicated unique products list
+  const uniqueProducts = useMemo(() => {
     const seen = new Set<string>();
-    const unique = products.filter((p) => {
+    return products.filter((p) => {
       if (!p.id || seen.has(p.id)) return false;
       seen.add(p.id);
       return true;
     });
-    if (!searchQuery.trim()) return unique;
-    const q = searchQuery.toLowerCase().trim();
-    return unique.filter(
-      (p) =>
-        (p.name || "").toLowerCase().includes(q) ||
-        (p.barcode || "").toLowerCase().includes(q) ||
-        (p.shortCode || "").toLowerCase().includes(q) ||
-        (p.categoryName && p.categoryName.toLowerCase().includes(q)) ||
-        (p.manufacturingUnitName && p.manufacturingUnitName.toLowerCase().includes(q)) ||
-        (p.packingUnitName && p.packingUnitName.toLowerCase().includes(q))
-    );
-  }, [products, searchQuery]);
+  }, [products]);
+
+  // Combined Category Filter Options (from product_categories + any product categoryName)
+  const categoryFilterOptions = useMemo(() => {
+    const map = new Map<string, { value: string; label: string; count: number }>();
+
+    categories.forEach((cat) => {
+      const key = cat.name.toLowerCase().trim();
+      if (key && !map.has(key)) {
+        map.set(key, { value: cat.name, label: cat.name, count: 0 });
+      }
+    });
+
+    let uncategorizedCount = 0;
+    uniqueProducts.forEach((p) => {
+      const catName = (p.categoryName || "").trim();
+      if (!catName) {
+        uncategorizedCount++;
+        return;
+      }
+      const key = catName.toLowerCase();
+      if (map.has(key)) {
+        map.get(key)!.count += 1;
+      } else {
+        map.set(key, { value: catName, label: catName, count: 1 });
+      }
+    });
+
+    const sorted = Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+    if (uncategorizedCount > 0) {
+      sorted.push({ value: "__uncategorized__", label: "Uncategorized", count: uncategorizedCount });
+    }
+    return sorted;
+  }, [categories, uniqueProducts]);
+
+  // Category + Search filtering
+  const filteredProducts = useMemo(() => {
+    return uniqueProducts.filter((p) => {
+      // 1. Category filter
+      if (selectedCategoryFilter !== "all") {
+        const prodCatName = (p.categoryName || "").trim().toLowerCase();
+        if (selectedCategoryFilter === "__uncategorized__") {
+          if (prodCatName !== "") return false;
+        } else {
+          if (prodCatName !== selectedCategoryFilter.trim().toLowerCase()) return false;
+        }
+      }
+
+      // 2. Search query filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matches =
+          (p.name || "").toLowerCase().includes(q) ||
+          (p.barcode || "").toLowerCase().includes(q) ||
+          (p.shortCode || "").toLowerCase().includes(q) ||
+          (p.categoryName && p.categoryName.toLowerCase().includes(q)) ||
+          (p.manufacturingUnitName && p.manufacturingUnitName.toLowerCase().includes(q)) ||
+          (p.packingUnitName && p.packingUnitName.toLowerCase().includes(q));
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+  }, [uniqueProducts, selectedCategoryFilter, searchQuery]);
 
   // Paginated data (24 per page)
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
@@ -542,6 +595,87 @@ export default function ProductsPage() {
       });
     }
     return "Recently";
+  };
+
+  // Export Products to Excel (.xlsx) with complete product data
+  const handleExportProductsExcel = () => {
+    try {
+      const exportList = filteredProducts;
+      if (exportList.length === 0) {
+        showToast("No products available to export", "error");
+        return;
+      }
+
+      const rows = exportList.map((p, index) => ({
+        "S.No": index + 1,
+        "Product Name": p.name || "",
+        "Category Name": p.categoryName || "",
+        "Barcode": p.barcode || "",
+        "Short Code": p.shortCode || "",
+        "Unit": p.unit || "",
+        "Selling Price / Amount": Number(p.amount) || 0,
+        "Manufacturing Unit Name": p.manufacturingUnitName || "",
+        "Packing Unit Name": p.packingUnitName || "",
+        "Cost Per Piece":
+          p.costPerPiece !== undefined && p.costPerPiece !== ""
+            ? Number(p.costPerPiece)
+            : "",
+        "Pieces Per KG":
+          p.piecesPerKg !== undefined && p.piecesPerKg !== ""
+            ? Number(p.piecesPerKg)
+            : "",
+        "KG Per Tray":
+          p.kgPerTray !== undefined && p.kgPerTray !== ""
+            ? Number(p.kgPerTray)
+            : "",
+        "Is Favourite": p.isFavourite ? "Yes" : "No",
+        "Show in Worksheet": p.showInWorksheet ? "Yes" : "No",
+        "Roundoff Enabled": p.hasRoundOff ? "Yes" : "No",
+        "Image URL": p.imageUrl || "",
+        "Created Date": formatDate(p.createdAt),
+        "Product ID": p.id,
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      worksheet["!cols"] = [
+        { wch: 7 },  // S.No
+        { wch: 32 }, // Product Name
+        { wch: 22 }, // Category Name
+        { wch: 16 }, // Barcode
+        { wch: 14 }, // Short Code
+        { wch: 12 }, // Unit
+        { wch: 22 }, // Selling Price / Amount
+        { wch: 26 }, // Manufacturing Unit Name
+        { wch: 24 }, // Packing Unit Name
+        { wch: 15 }, // Cost Per Piece
+        { wch: 15 }, // Pieces Per KG
+        { wch: 14 }, // KG Per Tray
+        { wch: 14 }, // Is Favourite
+        { wch: 18 }, // Show in Worksheet
+        { wch: 18 }, // Roundoff Enabled
+        { wch: 36 }, // Image URL
+        { wch: 16 }, // Created Date
+        { wch: 24 }, // Product ID
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Products");
+
+      const dateStamp = new Date().toISOString().split("T")[0];
+      const safeCat =
+        selectedCategoryFilter === "all"
+          ? "All"
+          : selectedCategoryFilter === "__uncategorized__"
+          ? "Uncategorized"
+          : selectedCategoryFilter.replace(/[^a-zA-Z0-9]+/g, "_");
+      const fileName = `Ravi_Sweets_Products_${safeCat}_${dateStamp}.xlsx`;
+
+      XLSX.writeFile(workbook, fileName);
+      showToast(`Exported ${exportList.length} products to ${fileName}!`, "success");
+    } catch (err: any) {
+      console.error("Error exporting products Excel:", err);
+      showToast("Failed to export products: " + (err.message || "Unknown error"), "error");
+    }
   };
 
   // Download Sample Excel Template (80 Realistic Products)
@@ -940,6 +1074,18 @@ export default function ProductsPage() {
             </button>
 
             <button
+              onClick={handleExportProductsExcel}
+              disabled={isLoading || filteredProducts.length === 0}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-md border font-normal cursor-pointer bg-white hover:bg-slate-50 transition-colors shadow-2xs border-slate-200 text-slate-700 disabled:opacity-50"
+              title="Export Products to Excel (.xlsx)"
+            >
+              <Download size={14} className="text-[#348bdd]" />
+              <span>
+                Export Excel{selectedCategoryFilter !== "all" || searchQuery.trim() ? ` (${filteredProducts.length})` : ""}
+              </span>
+            </button>
+
+            <button
               onClick={() => {
                 setBulkFileName("");
                 setParsedProducts([]);
@@ -1016,29 +1162,83 @@ export default function ProductsPage() {
       ) : (
         <>
           {/* Search and Filters Toolbar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div
-          className="flex items-center gap-2 px-3 py-1.5 rounded-md border w-full sm:w-80 bg-white"
-          style={{
-            borderColor: "var(--color-border-base)",
-          }}
-        >
-          <Search size={14} style={{ color: "var(--color-text-muted)" }} />
-          <input
-            type="text"
-            placeholder="Search by name, barcode, code, category..."
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md border w-full sm:w-80 bg-white"
+            style={{
+              borderColor: "var(--color-border-base)",
             }}
-            className="w-full text-xs bg-transparent focus:outline-none"
-            style={{ color: "var(--color-text-primary)" }}
-          />
+          >
+            <Search size={14} style={{ color: "var(--color-text-muted)" }} />
+            <input
+              type="text"
+              placeholder="Search by name, barcode, code, category..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full text-xs bg-transparent focus:outline-none"
+              style={{ color: "var(--color-text-primary)" }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  setCurrentPage(1);
+                }}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="Clear search"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          {/* Category Filter Dropdown */}
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md border bg-white sm:w-64"
+            style={{ borderColor: "var(--color-border-base)" }}
+          >
+            <FolderTree size={14} style={{ color: "var(--color-brand-primary)" }} className="shrink-0" />
+            <select
+              value={selectedCategoryFilter}
+              onChange={(e) => {
+                setSelectedCategoryFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full text-xs bg-transparent focus:outline-none cursor-pointer"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              <option value="all">All Categories ({uniqueProducts.length})</option>
+              {categoryFilterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label} ({opt.count})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {(selectedCategoryFilter !== "all" || searchQuery.trim()) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedCategoryFilter("all");
+                setSearchQuery("");
+                setCurrentPage(1);
+              }}
+              className="px-2.5 py-1.5 text-xs rounded-md border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 flex items-center justify-center gap-1 cursor-pointer transition-colors shrink-0"
+            >
+              <X size={12} />
+              <span>Clear Filters</span>
+            </button>
+          )}
         </div>
 
         <div
-          className="text-xs self-end sm:self-center"
+          className="text-xs self-end sm:self-center shrink-0"
           style={{ color: "var(--color-text-muted)" }}
         >
           Showing {paginatedProducts.length} of {filteredProducts.length} (Limit: 24/page)
@@ -1076,14 +1276,16 @@ export default function ProductsPage() {
               className="text-sm text-[var(--color-text-primary)]"
               style={{ fontWeight: 500 }}
             >
-              {searchQuery ? "No matching products found" : "No products added yet"}
+              {searchQuery || selectedCategoryFilter !== "all"
+                ? "No matching products found"
+                : "No products added yet"}
             </h3>
             <p className="text-xs mt-1 max-w-sm" style={{ color: "var(--color-text-muted)" }}>
-              {searchQuery
-                ? "Try searching for a different term or clear the filter."
+              {searchQuery || selectedCategoryFilter !== "all"
+                ? "Try selecting a different category or clearing the search filter."
                 : "Get started by adding your first sweet or snack product."}
             </p>
-            {!searchQuery && (
+            {!searchQuery && selectedCategoryFilter === "all" && (
               <button
                 onClick={handleOpenAdd}
                 className="mt-4 flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md text-white font-normal cursor-pointer"

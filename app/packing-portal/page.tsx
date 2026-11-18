@@ -1365,9 +1365,14 @@ export default function PackingPortalPage() {
                               orderNumber: order.orderNumber,
                               dateStr: order.deliveryDate || new Date().toISOString().split("T")[0],
                               timeStr: order.deliveryTime || "",
+                              deliveryDate: order.deliveryDate || "",
+                              deliveryTime: order.deliveryTime || "",
+                              billTitle: "PACKING & ORDER SLIP",
                               storeName: order.storeName,
                               customerName: order.customerName,
                               customerPhone: order.customerPhone,
+                              customerAddress: (order as any).customerAddress || "",
+                              customerGstNumber: (order as any).customerGstNumber || "",
                               items: order.items.map((i) => ({
                                 name: i.name,
                                 quantity: i.quantity,
@@ -1383,9 +1388,15 @@ export default function PackingPortalPage() {
                               gstPercentage: (order as any).gstPercentage,
                               cgstPercentage: (order as any).gstPercentage ? (order as any).gstPercentage / 2 : undefined,
                               sgstPercentage: (order as any).gstPercentage ? (order as any).gstPercentage / 2 : undefined,
+                              isGstEnabled: (order as any).isGstEnabled,
+                              gstType: (order as any).gstType,
                               grandTotal: order.grandTotal,
+                              receivedAmount: (order as any).receivedAmount,
+                              balanceAmount: (order as any).balanceAmount,
+                              paymentStatus: (order as any).paymentStatus,
                               paymentMethod: order.paymentMethod,
                               splitDetails: order.splitDetails,
+                              packingDescription: order.packingDescription || "",
                             });
                           }}
                           className="p-1.5 text-slate-500 hover:text-slate-800 rounded border border-slate-200 bg-white hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
