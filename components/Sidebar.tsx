@@ -109,6 +109,7 @@ export const SIDEBAR_ITEMS: NavItem[] = [
   {
     name: "Manufacturing Stock Analysis",
     href: "/manufacturing-stock-analysis",
+    aliases: ["/stock-analysis", "/manufacturing-analysis"],
     icon: LineChart,
     category: "Inventory & Operations",
   },
