@@ -24,6 +24,7 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import CustomDatePicker from "@/components/CustomDatePicker";
 import CustomTimePicker from "@/components/CustomTimePicker";
 import { A4InvoiceSettings, defaultA4InvoiceSettings } from "@/types/settings";
+import * as XLSX from "xlsx";
 import {
   Plus,
   Search,
@@ -74,6 +75,8 @@ import {
   UploadCloud,
   ZoomIn,
   Scale,
+  Download,
+  FileSpreadsheet,
 } from "lucide-react";
 import { RoundoffRule, findMatchingRoundoffRule } from "@/types/roundoff";
 
@@ -1520,6 +1523,247 @@ export default function OrdersPage() {
     }
   };
 
+  // Export filtered orders bills to Excel (.xlsx)
+  const handleExportOrdersExcel = () => {
+    try {
+      if (filteredOrders.length === 0) {
+        showToast("No orders available to export", "error");
+        return;
+      }
+
+      // Sheet 1: Orders Summary
+      const summaryRows = filteredOrders.map((o, index) => {
+        const tax = getOrderTaxSummary(o);
+        const createdDateStr = o.createdAt?.toDate
+          ? o.createdAt.toDate().toISOString().split("T")[0]
+          : o.deliveryDate || "";
+        const createdTimeStr = o.createdAt?.toDate
+          ? o.createdAt.toDate().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
+          : "";
+        const itemsOverview = o.items?.map((i) => `${i.name} (${i.quantity} ${i.unit})`).join(", ") || "";
+        const totalQty = o.items?.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0) || 0;
+
+        return {
+          "S.No": index + 1,
+          "Order No": o.orderNumber || "",
+          "Booking Date": createdDateStr,
+          "Booking Time": createdTimeStr,
+          "Delivery Date": o.deliveryDate || "",
+          "Delivery Time": o.deliveryTime || "",
+          "Store Name": o.storeName || "",
+          "Customer Name": o.customerName || "",
+          "Customer Phone": o.customerPhone || "",
+          "Customer Address": o.customerAddress || "",
+          "Customer GSTIN": o.customerGstNumber || "",
+          "B2B Order": o.isB2b ? "Yes" : "No",
+          "Order Status": o.orderStatus || "Created",
+          "Total Items Count": o.items?.length || 0,
+          "Total Quantity": totalQty,
+          "Items Details": itemsOverview,
+          "Subtotal (₹)": tax.subtotal,
+          "Discount (₹)": tax.discount,
+          "Taxable Value (₹)": tax.taxableSubtotal,
+          "CGST (₹)": tax.cgst,
+          "SGST (₹)": tax.sgst,
+          "Total GST (₹)": tax.totalGst,
+          "Round Off (₹)": tax.roundOff,
+          "Grand Total (₹)": tax.grandTotal,
+          "Advance Received (₹)": Number(o.receivedAmount || 0),
+          "Balance Due (₹)": Number(o.balanceAmount || 0),
+          "Payment Status": o.paymentStatus || "Unpaid",
+          "Payment Mode": o.paymentMethod || "Cash",
+          "Packing Notes": o.packingDescription || "",
+        };
+      });
+
+      // Sheet 2: Ordered Items Detail
+      const itemRows: any[] = [];
+      let itemIdx = 1;
+      filteredOrders.forEach((o) => {
+        o.items?.forEach((item) => {
+          itemRows.push({
+            "S.No": itemIdx++,
+            "Order No": o.orderNumber || "",
+            "Delivery Date": o.deliveryDate || "",
+            "Customer Name": o.customerName || "",
+            "Customer Phone": o.customerPhone || "",
+            "Store Name": o.storeName || "",
+            "Item Name": item.name || "",
+            "Unit": item.unit || "",
+            "Quantity": Number(item.quantity) || 0,
+            "Rate (₹)": Number(item.rate) || 0,
+            "Total Amount (₹)": Number(item.totalAmount) || 0,
+            "Manufacturing Unit": item.manufacturingUnitName || "",
+            "Packing Unit": item.packingUnitName || "",
+            "Item Status": item.status || o.orderStatus || "Created",
+            "Manufacturing Notes": item.manufacturingDescription || "",
+          });
+        });
+      });
+
+      const workbook = XLSX.utils.book_new();
+
+      const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+      wsSummary["!cols"] = [
+        { wch: 6 },  // S.No
+        { wch: 16 }, // Order No
+        { wch: 14 }, // Booking Date
+        { wch: 12 }, // Booking Time
+        { wch: 14 }, // Delivery Date
+        { wch: 14 }, // Delivery Time
+        { wch: 20 }, // Store Name
+        { wch: 22 }, // Customer Name
+        { wch: 15 }, // Customer Phone
+        { wch: 28 }, // Customer Address
+        { wch: 18 }, // Customer GSTIN
+        { wch: 12 }, // B2B Order
+        { wch: 22 }, // Order Status
+        { wch: 16 }, // Total Items Count
+        { wch: 14 }, // Total Quantity
+        { wch: 45 }, // Items Details
+        { wch: 14 }, // Subtotal
+        { wch: 14 }, // Discount
+        { wch: 16 }, // Taxable Value
+        { wch: 12 }, // CGST
+        { wch: 12 }, // SGST
+        { wch: 14 }, // Total GST
+        { wch: 12 }, // Round Off
+        { wch: 16 }, // Grand Total
+        { wch: 18 }, // Advance Received
+        { wch: 16 }, // Balance Due
+        { wch: 14 }, // Payment Status
+        { wch: 14 }, // Payment Mode
+        { wch: 30 }, // Packing Notes
+      ];
+      XLSX.utils.book_append_sheet(workbook, wsSummary, "Orders Summary");
+
+      if (itemRows.length > 0) {
+        const wsItems = XLSX.utils.json_to_sheet(itemRows);
+        wsItems["!cols"] = [
+          { wch: 6 },  // S.No
+          { wch: 16 }, // Order No
+          { wch: 14 }, // Delivery Date
+          { wch: 22 }, // Customer Name
+          { wch: 15 }, // Customer Phone
+          { wch: 20 }, // Store Name
+          { wch: 30 }, // Item Name
+          { wch: 10 }, // Unit
+          { wch: 12 }, // Quantity
+          { wch: 12 }, // Rate
+          { wch: 16 }, // Total Amount
+          { wch: 22 }, // Manufacturing Unit
+          { wch: 20 }, // Packing Unit
+          { wch: 20 }, // Item Status
+          { wch: 30 }, // Manufacturing Notes
+        ];
+        XLSX.utils.book_append_sheet(workbook, wsItems, "Ordered Items Detail");
+      }
+
+      const dateStamp = new Date().toISOString().split("T")[0];
+      const fileName = `Ravi_Sweets_Orders_${dateFilter}_${dateStamp}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      showToast(`Exported ${filteredOrders.length} orders to Excel!`, "success");
+    } catch (err: any) {
+      console.error("Export orders error:", err);
+      showToast("Failed to export orders: " + err.message, "error");
+    }
+  };
+
+  // Export a single order bill / invoice to Excel (.xlsx)
+  const handleExportSingleOrderExcel = (order: OrderRecord) => {
+    try {
+      const tax = getOrderTaxSummary(order);
+      const createdDateStr = order.createdAt?.toDate
+        ? order.createdAt.toDate().toISOString().split("T")[0]
+        : order.deliveryDate || "";
+      const createdTimeStr = order.createdAt?.toDate
+        ? order.createdAt.toDate().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
+        : "";
+
+      const orderHeaderData = [
+        { Field: "Business Name", Value: businessProfile.tradeName || "Ravi Sweets" },
+        { Field: "Order Number", Value: order.orderNumber || "" },
+        { Field: "Booking Date & Time", Value: `${createdDateStr} ${createdTimeStr}`.trim() },
+        { Field: "Delivery Date", Value: order.deliveryDate || "" },
+        { Field: "Delivery Time", Value: order.deliveryTime || "" },
+        { Field: "Store", Value: order.storeName || "" },
+        { Field: "Customer Name", Value: order.customerName || "" },
+        { Field: "Customer Phone", Value: order.customerPhone || "" },
+        { Field: "Customer Address", Value: order.customerAddress || "" },
+        { Field: "Customer GSTIN", Value: order.customerGstNumber || "" },
+        { Field: "Order Status", Value: order.orderStatus || "" },
+        { Field: "Payment Status", Value: order.paymentStatus || "" },
+        { Field: "Payment Mode", Value: order.paymentMethod || "" },
+        { Field: "Items Subtotal (₹)", Value: tax.subtotal },
+        { Field: "Discount (₹)", Value: tax.discount },
+        { Field: "Taxable Value (₹)", Value: tax.taxableSubtotal },
+        { Field: "CGST (₹)", Value: tax.cgst },
+        { Field: "SGST (₹)", Value: tax.sgst },
+        { Field: "Total GST (₹)", Value: tax.totalGst },
+        { Field: "Round Off (₹)", Value: tax.roundOff },
+        { Field: "Grand Total (₹)", Value: tax.grandTotal },
+        { Field: "Advance Paid (₹)", Value: Number(order.receivedAmount || 0) },
+        { Field: "Balance Due (₹)", Value: Number(order.balanceAmount || 0) },
+        { Field: "Packing Notes", Value: order.packingDescription || "" },
+      ];
+
+      const itemRows = (order.items || []).map((item, idx) => ({
+        "S.No": idx + 1,
+        "Item Name": item.name,
+        "Unit": item.unit,
+        "Quantity": Number(item.quantity) || 0,
+        "Rate (₹)": Number(item.rate) || 0,
+        "Total Amount (₹)": Number(item.totalAmount) || 0,
+        "Manufacturing Unit": item.manufacturingUnitName || "",
+        "Packing Unit": item.packingUnitName || "",
+        "Item Status": item.status || order.orderStatus,
+        "Notes": item.manufacturingDescription || "",
+      }));
+
+      const workbook = XLSX.utils.book_new();
+
+      const wsItems = XLSX.utils.json_to_sheet(itemRows);
+      wsItems["!cols"] = [
+        { wch: 6 },
+        { wch: 30 },
+        { wch: 10 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 16 },
+        { wch: 22 },
+        { wch: 20 },
+        { wch: 18 },
+        { wch: 30 },
+      ];
+      XLSX.utils.book_append_sheet(workbook, wsItems, "Ordered Items");
+
+      const wsInfo = XLSX.utils.json_to_sheet(orderHeaderData);
+      wsInfo["!cols"] = [{ wch: 24 }, { wch: 38 }];
+      XLSX.utils.book_append_sheet(workbook, wsInfo, "Order Information");
+
+      // Optional Payment History Sheet
+      if (order.paymentHistory && order.paymentHistory.length > 0) {
+        const paymentRows = order.paymentHistory.map((p, pIdx) => ({
+          "S.No": pIdx + 1,
+          "Date": p.date,
+          "Amount (₹)": Number(p.amount) || 0,
+          "Payment Mode": p.paymentMethod,
+          "Notes": p.note || "",
+        }));
+        const wsPay = XLSX.utils.json_to_sheet(paymentRows);
+        wsPay["!cols"] = [{ wch: 6 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 32 }];
+        XLSX.utils.book_append_sheet(workbook, wsPay, "Payment History");
+      }
+
+      const safeOrderNum = (order.orderNumber || "Order").replace(/[^a-zA-Z0-9_-]/g, "_");
+      XLSX.writeFile(workbook, `Ravi_Sweets_Order_${safeOrderNum}.xlsx`);
+      showToast(`Exported order ${order.orderNumber} to Excel!`, "success");
+    } catch (err: any) {
+      console.error("Export order error:", err);
+      showToast("Failed to export order: " + err.message, "error");
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 lg:p-8 w-full space-y-6">
       {/* Top Header */}
@@ -1565,6 +1809,15 @@ export default function OrdersPage() {
 
         {/* Actions: Refresh & Add Order Button */}
         <div className="flex items-center gap-2.5">
+          <button
+            onClick={handleExportOrdersExcel}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-md border font-normal cursor-pointer bg-white hover:bg-slate-50 transition-colors shadow-2xs border-slate-200 text-slate-700"
+            title="Export filtered orders bills to Excel (.xlsx)"
+          >
+            <Download size={14} className="text-[#348bdd]" />
+            <span>Export Orders</span>
+          </button>
+
           <button
             onClick={fetchOrdersData}
             title="Refresh list"
@@ -1962,6 +2215,15 @@ export default function OrdersPage() {
                           title="Print A4 Tax Invoice"
                         >
                           <FileText size={13} />
+                        </button>
+
+                        {/* Export Order to Excel */}
+                        <button
+                          onClick={() => handleExportSingleOrderExcel(o)}
+                          className="w-7 h-7 rounded-md flex items-center justify-center transition-all bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100 cursor-pointer shadow-2xs"
+                          title="Export Order Bill to Excel (.xlsx)"
+                        >
+                          <Download size={13} />
                         </button>
 
                         {/* View - Sky blue */}
@@ -3766,6 +4028,16 @@ export default function OrdersPage() {
                   <FileText size={13} />
                   <span>A4 Tax Invoice</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportSingleOrderExcel(viewingOrder)}
+                  className="px-3 py-1.5 text-xs rounded border bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs border-emerald-200"
+                  title="Export Order Bill to Excel (.xlsx)"
+                >
+                  <Download size={13} className="text-emerald-600" />
+                  <span>Export Bill</span>
+                </button>
               </div>
 
               <div className="flex items-center gap-2">
@@ -4146,6 +4418,16 @@ export default function OrdersPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleExportSingleOrderExcel(a4InvoiceOrder)}
+                className="px-3.5 py-2 text-xs rounded-lg border bg-white hover:bg-slate-50 text-slate-700 font-medium cursor-pointer flex items-center gap-1.5 border-slate-200 shadow-2xs"
+                title="Export Tax Invoice to Excel (.xlsx)"
+              >
+                <Download size={14} className="text-[#348bdd]" />
+                <span>Export Excel</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => window.print()}

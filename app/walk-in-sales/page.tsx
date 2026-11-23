@@ -10,6 +10,8 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { usePrinter } from "@/context/PrinterContext";
+import { useToast } from "@/components/ToastProvider";
+import * as XLSX from "xlsx";
 import {
   ShoppingBag,
   Search,
@@ -31,6 +33,8 @@ import {
   RotateCw,
   X,
   FileText,
+  Download,
+  FileSpreadsheet,
 } from "lucide-react";
 
 interface SaleItem {
@@ -80,6 +84,7 @@ const PAGE_SIZE = 24;
 
 export default function WalkInSalesPage() {
   const { printReceipt, maskPhoneNumber } = usePrinter();
+  const { showToast } = useToast();
 
   // Data states
   const [sales, setSales] = useState<WalkInSaleRecord[]>([]);
@@ -438,6 +443,190 @@ export default function WalkInSalesPage() {
     });
   };
 
+  // Export filtered walk-in sales bills to Excel (.xlsx)
+  const handleExportSalesExcel = () => {
+    try {
+      if (filteredSales.length === 0) {
+        showToast("No walk-in sales bills available to export", "error");
+        return;
+      }
+
+      // Sheet 1: Sales Bills Summary
+      const summaryRows = filteredSales.map((sale, index) => {
+        const tax = getSaleTaxSummary(sale);
+        const dateStr = sale.deliveryDate || (sale.createdAt?.toDate ? sale.createdAt.toDate().toISOString().split("T")[0] : "");
+        const timeStr = sale.deliveryTime || (sale.createdAt?.toDate ? sale.createdAt.toDate().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "");
+        const itemsOverview = sale.items?.map((i) => `${i.name} (${i.quantity} ${i.unit})`).join(", ") || "";
+        const totalQty = sale.items?.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0) || 0;
+
+        return {
+          "S.No": index + 1,
+          "Bill No": sale.billNumber || sale.orderNumber || "",
+          "Date": dateStr,
+          "Time": timeStr,
+          "Store Name": sale.storeName || "",
+          "Customer Name": sale.customerName || "Walk-In Customer",
+          "Customer Phone": sale.customerPhone || "",
+          "Total Items Count": sale.items?.length || 0,
+          "Total Quantity": totalQty,
+          "Items Details": itemsOverview,
+          "Subtotal (₹)": tax.subtotal,
+          "Discount (₹)": tax.discount,
+          "Taxable Value (₹)": tax.taxableSubtotal,
+          "CGST (₹)": tax.cgst,
+          "SGST (₹)": tax.sgst,
+          "Total GST (₹)": tax.totalGst,
+          "Round Off (₹)": tax.roundOff,
+          "Grand Total (₹)": tax.grandTotal,
+          "Payment Mode": sale.paymentMethod || "Cash",
+          "Cash (₹)": sale.paymentMethod === "Cash" ? tax.grandTotal : (sale.splitDetails?.cash || 0),
+          "UPI (₹)": sale.paymentMethod === "UPI" ? tax.grandTotal : (sale.splitDetails?.upi || 0),
+          "Card (₹)": sale.paymentMethod === "Card" ? tax.grandTotal : (sale.splitDetails?.card || 0),
+          "Payment Status": sale.paymentStatus || "Done",
+        };
+      });
+
+      // Sheet 2: Item Wise Details
+      const itemRows: any[] = [];
+      let itemIdx = 1;
+      filteredSales.forEach((sale) => {
+        const dateStr = sale.deliveryDate || (sale.createdAt?.toDate ? sale.createdAt.toDate().toISOString().split("T")[0] : "");
+        sale.items?.forEach((item) => {
+          itemRows.push({
+            "S.No": itemIdx++,
+            "Bill No": sale.billNumber || sale.orderNumber || "",
+            "Date": dateStr,
+            "Store Name": sale.storeName || "",
+            "Customer Name": sale.customerName || "Walk-In Customer",
+            "Item Name": item.name || "",
+            "Unit": item.unit || "",
+            "Quantity": Number(item.quantity) || 0,
+            "Rate (₹)": Number(item.rate) || 0,
+            "Amount (₹)": Number(item.totalAmount) || 0,
+            "Payment Mode": sale.paymentMethod || "Cash",
+          });
+        });
+      });
+
+      const workbook = XLSX.utils.book_new();
+
+      const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+      wsSummary["!cols"] = [
+        { wch: 6 },  // S.No
+        { wch: 16 }, // Bill No
+        { wch: 12 }, // Date
+        { wch: 10 }, // Time
+        { wch: 20 }, // Store Name
+        { wch: 22 }, // Customer Name
+        { wch: 15 }, // Customer Phone
+        { wch: 16 }, // Total Items Count
+        { wch: 14 }, // Total Quantity
+        { wch: 40 }, // Items Details
+        { wch: 14 }, // Subtotal
+        { wch: 14 }, // Discount
+        { wch: 16 }, // Taxable Value
+        { wch: 12 }, // CGST
+        { wch: 12 }, // SGST
+        { wch: 14 }, // Total GST
+        { wch: 12 }, // Round Off
+        { wch: 16 }, // Grand Total
+        { wch: 14 }, // Payment Mode
+        { wch: 12 }, // Cash
+        { wch: 12 }, // UPI
+        { wch: 12 }, // Card
+        { wch: 14 }, // Payment Status
+      ];
+      XLSX.utils.book_append_sheet(workbook, wsSummary, "Bills Summary");
+
+      if (itemRows.length > 0) {
+        const wsItems = XLSX.utils.json_to_sheet(itemRows);
+        wsItems["!cols"] = [
+          { wch: 6 },
+          { wch: 16 },
+          { wch: 12 },
+          { wch: 20 },
+          { wch: 22 },
+          { wch: 30 },
+          { wch: 10 },
+          { wch: 12 },
+          { wch: 12 },
+          { wch: 14 },
+          { wch: 14 },
+        ];
+        XLSX.utils.book_append_sheet(workbook, wsItems, "Item Wise Details");
+      }
+
+      const dateStamp = new Date().toISOString().split("T")[0];
+      const fileName = `Ravi_Sweets_WalkIn_Bills_${dateFilter}_${dateStamp}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      showToast(`Exported ${filteredSales.length} walk-in bills to Excel!`, "success");
+    } catch (err: any) {
+      console.error("Export sales error:", err);
+      showToast("Failed to export sales: " + err.message, "error");
+    }
+  };
+
+  // Export a single walk-in sale bill to Excel (.xlsx)
+  const handleExportSingleBillExcel = (sale: WalkInSaleRecord) => {
+    try {
+      const tax = getSaleTaxSummary(sale);
+      const dateStr = sale.deliveryDate || (sale.createdAt?.toDate ? sale.createdAt.toDate().toISOString().split("T")[0] : "");
+      const timeStr = sale.deliveryTime || (sale.createdAt?.toDate ? sale.createdAt.toDate().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "");
+
+      const billHeaderData = [
+        { Field: "Business Name", Value: businessProfile.tradeName || "Ravi Sweets & Cold Drinks" },
+        { Field: "Bill Number", Value: sale.billNumber || sale.orderNumber || "" },
+        { Field: "Date & Time", Value: `${dateStr} ${timeStr}`.trim() },
+        { Field: "Store", Value: sale.storeName || "" },
+        { Field: "Customer Name", Value: sale.customerName || "Walk-In Customer" },
+        { Field: "Customer Phone", Value: sale.customerPhone || "N/A" },
+        { Field: "Payment Method", Value: sale.paymentMethod || "Cash" },
+        { Field: "Payment Status", Value: sale.paymentStatus || "Done" },
+        { Field: "Items Subtotal (₹)", Value: tax.subtotal },
+        { Field: "Discount (₹)", Value: tax.discount },
+        { Field: "Taxable Value (₹)", Value: tax.taxableSubtotal },
+        { Field: "CGST (₹)", Value: tax.cgst },
+        { Field: "SGST (₹)", Value: tax.sgst },
+        { Field: "Total GST (₹)", Value: tax.totalGst },
+        { Field: "Round Off (₹)", Value: tax.roundOff },
+        { Field: "Grand Total Paid (₹)", Value: tax.grandTotal },
+      ];
+
+      const itemRows = (sale.items || []).map((item, idx) => ({
+        "S.No": idx + 1,
+        "Item Name": item.name,
+        "Unit": item.unit,
+        "Quantity": Number(item.quantity) || 0,
+        "Rate (₹)": Number(item.rate) || 0,
+        "Total Amount (₹)": Number(item.totalAmount) || 0,
+      }));
+
+      const workbook = XLSX.utils.book_new();
+
+      const wsItems = XLSX.utils.json_to_sheet(itemRows);
+      wsItems["!cols"] = [
+        { wch: 6 },
+        { wch: 32 },
+        { wch: 10 },
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 16 },
+      ];
+      XLSX.utils.book_append_sheet(workbook, wsItems, "Purchased Items");
+
+      const wsInfo = XLSX.utils.json_to_sheet(billHeaderData);
+      wsInfo["!cols"] = [{ wch: 24 }, { wch: 36 }];
+      XLSX.utils.book_append_sheet(workbook, wsInfo, "Bill Information");
+
+      const safeBill = (sale.billNumber || sale.orderNumber || "Bill").replace(/[^a-zA-Z0-9_-]/g, "_");
+      XLSX.writeFile(workbook, `Ravi_Sweets_Bill_${safeBill}.xlsx`);
+      showToast(`Exported bill ${sale.billNumber || sale.orderNumber} to Excel!`, "success");
+    } catch (err: any) {
+      console.error("Export bill error:", err);
+      showToast("Failed to export bill: " + err.message, "error");
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 lg:p-8 w-full space-y-6">
       {/* Top Header */}
@@ -516,6 +705,15 @@ export default function WalkInSalesPage() {
               </span>
             </div>
           </div>
+
+          <button
+            onClick={handleExportSalesExcel}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border font-normal cursor-pointer bg-white hover:bg-slate-50 transition-colors shadow-2xs border-slate-200 text-slate-700 shrink-0"
+            title="Export filtered walk-in sales bills to Excel (.xlsx)"
+          >
+            <Download size={14} className="text-[#348bdd]" />
+            <span>Export Bills</span>
+          </button>
         </div>
       </div>
 
@@ -792,6 +990,13 @@ export default function WalkInSalesPage() {
                             <span>Print</span>
                           </button>
                           <button
+                            onClick={() => handleExportSingleBillExcel(sale)}
+                            className="p-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-600 transition-colors cursor-pointer shadow-2xs"
+                            title="Export Bill to Excel (.xlsx)"
+                          >
+                            <Download size={13} className="text-[#348bdd]" />
+                          </button>
+                          <button
                             onClick={() => setViewingSale(sale)}
                             className="p-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-600 transition-colors cursor-pointer shadow-2xs"
                             title="View Full Bill Details"
@@ -983,14 +1188,26 @@ export default function WalkInSalesPage() {
 
             {/* Modal Footer */}
             <div className="px-6 py-3 border-t border-slate-200 bg-slate-50/70 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => handleReprintReceipt(viewingSale)}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#348bdd] hover:bg-[#2b7bc4] text-white text-xs font-semibold cursor-pointer shadow-2xs"
-              >
-                <Printer size={13} />
-                <span>Reprint Receipt Slip</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleReprintReceipt(viewingSale)}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#348bdd] hover:bg-[#2b7bc4] text-white text-xs font-semibold cursor-pointer shadow-2xs"
+                >
+                  <Printer size={13} />
+                  <span>Reprint Receipt Slip</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportSingleBillExcel(viewingSale)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium cursor-pointer shadow-2xs"
+                  title="Export Bill to Excel (.xlsx)"
+                >
+                  <Download size={13} className="text-[#348bdd]" />
+                  <span>Export Bill</span>
+                </button>
+              </div>
 
               <button
                 type="button"
