@@ -464,6 +464,8 @@ export default function PosBillingPage() {
       setWeightInput(1);
       setAmountInput(product.amount);
       setIsWeightModalOpen(true);
+      setProductSearch("");
+      setSearchBarcode("");
     } else {
       // Piece / Box / Tray item: increment existing or add new
       setCart((prev) => {
@@ -495,6 +497,7 @@ export default function PosBillingPage() {
         }
       });
       setProductSearch("");
+      setSearchBarcode("");
     }
   };
 
@@ -605,6 +608,7 @@ export default function PosBillingPage() {
           showToast(`Added ${matched.name} (${finalWeight} ${matched.unit}) - ₹${lineAmt}`, "success");
         }
         setSearchBarcode("");
+        setProductSearch("");
       } else {
         // No quantity provided: open weight customization modal
         setEditingLineId(null);
@@ -613,6 +617,7 @@ export default function PosBillingPage() {
         setAmountInput(matched.amount);
         setIsWeightModalOpen(true);
         setSearchBarcode("");
+        setProductSearch("");
       }
     } else {
       // Piece / Box based product
@@ -655,6 +660,7 @@ export default function PosBillingPage() {
 
       showToast(`Added ${qtyToAdd} × ${matched.name}`, "success");
       setSearchBarcode("");
+      setProductSearch("");
     }
 
     setTimeout(() => {
@@ -716,6 +722,7 @@ export default function PosBillingPage() {
     setWeightModalProduct(null);
     setEditingLineId(null);
     setProductSearch("");
+    setSearchBarcode("");
   };
 
   // Update piece item quantity
@@ -1219,8 +1226,18 @@ export default function PosBillingPage() {
                 placeholder="Search sweet name..."
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                className="w-full pl-8 pr-7 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
               />
+              {productSearch && (
+                <button
+                  type="button"
+                  onClick={() => setProductSearch("")}
+                  className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer"
+                  title="Clear search"
+                >
+                  <X size={13} />
+                </button>
+              )}
             </div>
           </div>
 

@@ -741,6 +741,7 @@ export default function OrdersPage() {
       setWeightInput(1); // default 1 KG
       setAmountInput(product.amount); // 1 * rate
       setMfgDescInput("");
+      setProductCatalogSearch("");
     } else {
       // Piece item: increment if exists, else add new
       setSelectedItems((prev) => {
@@ -2318,6 +2319,16 @@ export default function OrdersPage() {
                       onChange={(e) => setProductCatalogSearch(e.target.value)}
                       className="w-full text-xs bg-transparent focus:outline-none"
                     />
+                    {productCatalogSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setProductCatalogSearch("")}
+                        className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer shrink-0"
+                        title="Clear filter"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
                   </div>
                 </div>
 
