@@ -305,7 +305,7 @@ export default function CateringCreditsPage() {
               className="text-2xl text-[var(--color-text-primary)] tracking-tight"
               style={{ fontWeight: 500 }}
             >
-              Catering Credits
+              Buyers Credits
             </h1>
             <span
               className="px-2 py-0.5 text-xs rounded font-normal font-mono"
@@ -319,7 +319,7 @@ export default function CateringCreditsPage() {
             </span>
           </div>
           <p className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
-            Track partially paid catering orders, search by caterer, monitor pending balances, and record settlements.
+            Track partially paid buyer orders, search by buyer, monitor pending balances, and record settlements.
           </p>
         </div>
 
@@ -510,7 +510,7 @@ export default function CateringCreditsPage() {
                 }}
               >
                 <th className="py-2.5 px-4">Order # & Date</th>
-                <th className="py-2.5 px-4">Caterer & Mobile</th>
+                <th className="py-2.5 px-4">Buyer & Mobile</th>
                 <th className="py-2.5 px-4">Event Date</th>
                 <th className="py-2.5 px-4 text-right">Total Order Value</th>
                 <th className="py-2.5 px-4 text-right">Advance Paid</th>
@@ -524,14 +524,14 @@ export default function CateringCreditsPage() {
                 <tr>
                   <td colSpan={8} className="py-16 text-center text-slate-400">
                     <RotateCw size={20} className="animate-spin inline text-[#348bdd] mr-2" />
-                    Loading catering credit orders...
+                    Loading buyer credit orders...
                   </td>
                 </tr>
               ) : filteredCreditOrders.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-16 text-center text-slate-400">
                     <CheckCircle2 size={24} className="mx-auto text-emerald-500 mb-2" />
-                    No partially paid orders found. All catering accounts are settled!
+                    No partially paid orders found. All buyer credit accounts are settled!
                   </td>
                 </tr>
               ) : (
@@ -562,7 +562,7 @@ export default function CateringCreditsPage() {
                       <td className="py-3 px-4">
                         <span className="font-medium text-slate-800 block">{ord.deliveryDate}</span>
                         <span className="text-[10px] text-slate-500 truncate block max-w-[150px]">
-                          {ord.eventName || "Catering Function"}
+                          {ord.eventName || "Buyer Function"}
                         </span>
                       </td>
 
@@ -645,7 +645,7 @@ export default function CateringCreditsPage() {
               }}
             >
               <div>
-                <h3 className="text-sm font-medium text-slate-800">Settle Catering Credit</h3>
+                <h3 className="text-sm font-medium text-slate-800">Settle Buyer Credit</h3>
                 <span className="text-[11px] text-slate-500 font-mono">
                   {settlingOrder.orderNumber} • {settlingOrder.catererName}
                 </span>

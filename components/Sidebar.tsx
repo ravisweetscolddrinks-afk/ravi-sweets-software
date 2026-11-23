@@ -133,8 +133,8 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     category: "Inventory & Operations",
   },
   {
-    name: "Catering Manager",
-    icon: UtensilsCrossed,
+    name: "Buyers",
+    icon: Users,
     category: "Inventory & Operations",
     isAccordion: true,
     children: [
@@ -144,13 +144,13 @@ export const SIDEBAR_ITEMS: NavItem[] = [
         icon: Users,
       },
       {
-        name: "Catering Orders",
+        name: "Buyers Orders",
         href: "/catering-orders",
         aliases: ["/catering-order"],
         icon: ClipboardList,
       },
       {
-        name: "Catering Credits",
+        name: "Buyers Credits",
         href: "/catering-credits",
         aliases: ["/catering-dues"],
         icon: Wallet,
@@ -237,7 +237,9 @@ export default function Sidebar({
   const pathname = usePathname();
   const { currentUser, canAccess, logout } = useAuth();
   const [openAccordions, setOpenAccordions] = React.useState<Record<string, boolean>>({
-    "Catering Manager": true, // Default open as requested
+    "Buyers": true,
+    "Buyers Manager": true,
+    "Catering Manager": true,
   });
   const [hoveredItem, setHoveredItem] = React.useState<{
     name: string;

@@ -108,9 +108,9 @@ export const AVAILABLE_MENUS: MenuItemOption[] = [
   { id: "/worksheet", name: "Work Sheet", category: "Inventory & Operations" },
   { id: "/manufacturing-stock-analysis", name: "Manufacturing Stock Analysis", category: "Inventory & Operations" },
   { id: "/vendor-manager", name: "Vendor Manager", category: "Inventory & Operations" },
-  { id: "/caterers", name: "Buyers", category: "Catering Manager" },
-  { id: "/catering-orders", name: "Catering Orders", category: "Catering Manager" },
-  { id: "/catering-credits", name: "Catering Credits", category: "Catering Manager" },
+  { id: "/caterers", name: "Buyers", category: "Buyers" },
+  { id: "/catering-orders", name: "Buyers Orders", category: "Buyers" },
+  { id: "/catering-credits", name: "Buyers Credits", category: "Buyers" },
 
   // Outlets & Units
   { id: "/stores", name: "Stores", category: "Outlets & Units" },

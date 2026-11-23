@@ -235,7 +235,7 @@ export default function CaterersPage() {
 
       if (editingCatererId) {
         await updateDoc(doc(db, "caterers", editingCatererId), payload);
-        showToast(`Caterer "${name}" updated successfully`, "success");
+        showToast(`Buyer "${name}" updated successfully`, "success");
       } else {
         await addDoc(collection(db, "caterers"), {
           ...payload,
@@ -243,13 +243,13 @@ export default function CaterersPage() {
           totalCredits: 0,
           createdAt: serverTimestamp(),
         });
-        showToast(`Caterer "${name}" added successfully`, "success");
+        showToast(`Buyer "${name}" added successfully`, "success");
       }
 
       setIsModalOpen(false);
     } catch (err: any) {
       console.error(err);
-      showToast("Error saving caterer: " + err.message, "error");
+      showToast("Error saving buyer: " + err.message, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -260,11 +260,11 @@ export default function CaterersPage() {
     if (!deletingCaterer) return;
     try {
       await deleteDoc(doc(db, "caterers", deletingCaterer.id));
-      showToast(`Caterer "${deletingCaterer.name}" deleted successfully`, "success");
+      showToast(`Buyer "${deletingCaterer.name}" deleted successfully`, "success");
       setDeletingCaterer(null);
     } catch (err: any) {
       console.error(err);
-      showToast("Failed to delete caterer: " + err.message, "error");
+      showToast("Failed to delete buyer: " + err.message, "error");
     }
   };
 
@@ -307,7 +307,7 @@ export default function CaterersPage() {
             className="text-xs mt-1"
             style={{ color: "var(--color-text-muted)" }}
           >
-            Manage buyer profiles, contact phone numbers, MPINs, delivery cities, and catering order history.
+            Manage buyer profiles, contact phone numbers, MPINs, delivery cities, and buyer order history.
           </p>
         </div>
 
@@ -520,21 +520,21 @@ export default function CaterersPage() {
                           <Link
                             href={`/catering-orders?createFor=${cat.id}`}
                             className="px-2 py-1 rounded bg-blue-50 text-[#348bdd] hover:bg-[#348bdd] hover:text-white text-[11px] font-normal transition-colors"
-                            title="Create Catering Order"
+                            title="Create Buyer Order"
                           >
                             + Order
                           </Link>
                           <button
                             onClick={() => handleOpenEdit(cat)}
                             className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
-                            title="Edit Caterer"
+                            title="Edit Buyer"
                           >
                             <Edit2 size={13} />
                           </button>
                           <button
                             onClick={() => setDeletingCaterer(cat)}
                             className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                            title="Delete Caterer"
+                            title="Delete Buyer"
                           >
                             <Trash2 size={13} />
                           </button>

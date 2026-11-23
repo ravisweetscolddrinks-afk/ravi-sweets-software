@@ -507,7 +507,7 @@ export default function DashboardOverview() {
             className="text-xs mt-1"
             style={{ color: "var(--color-text-muted)" }}
           >
-            Live business performance across Walk-in Point-of-Sale (POS) and Catering / Bulk Orders.
+            Live business performance across Walk-in Point-of-Sale (POS) and Buyers / Bulk Orders.
           </p>
         </div>
 
@@ -736,7 +736,7 @@ export default function DashboardOverview() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-medium text-slate-900 tracking-tight">
-            Channel Deep-Dive: Walk-In Sales vs Catering & Bulk Orders
+            Channel Deep-Dive: Walk-In Sales vs Buyers & Bulk Orders
           </h2>
           <span className="text-xs text-slate-400">
             Isolated financial metrics per channel
@@ -852,7 +852,7 @@ export default function DashboardOverview() {
                 </div>
                 <div>
                   <h3 className="text-sm font-medium text-slate-900">Orders Analytics</h3>
-                  <p className="text-[11px] text-slate-500">Catering, weddings, bulk festive boxes & delivery orders</p>
+                  <p className="text-[11px] text-slate-500">Buyers, weddings, bulk festive boxes & delivery orders</p>
                 </div>
               </div>
               <Link

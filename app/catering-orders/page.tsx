@@ -502,7 +502,7 @@ export default function CateringOrdersPage() {
         orderDate,
         deliveryDate,
         deliveryTime,
-        eventName: eventName.trim() || "Catering Function",
+        eventName: eventName.trim() || "Buyer Function",
         venueAddress: venueAddress.trim() || selectedCaterer.address || "",
         items: selectedItems,
         subtotal: orderFinancials.subtotal,
@@ -541,7 +541,7 @@ export default function CateringOrdersPage() {
         console.warn("Could not update caterer summary stats:", catErr);
       }
 
-      showToast(`Catering Order ${orderNumber} created successfully!`, "success");
+      showToast(`Buyer Order ${orderNumber} created successfully!`, "success");
       setIsCreateModalOpen(false);
     } catch (err: any) {
       console.error(err);
@@ -661,7 +661,7 @@ export default function CateringOrdersPage() {
               className="text-2xl text-[var(--color-text-primary)] tracking-tight"
               style={{ fontWeight: 500 }}
             >
-              Catering Orders
+              Buyers Orders
             </h1>
             <span
               className="px-2 py-0.5 text-xs rounded font-normal font-mono"
@@ -675,7 +675,7 @@ export default function CateringOrdersPage() {
             </span>
           </div>
           <p className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
-            Book bulk sweet catering orders, assign caterers, schedule delivery dates, and track advance payments.
+            Book bulk sweet buyer orders, assign buyers, schedule delivery dates, and track advance payments.
           </p>
         </div>
 
@@ -687,7 +687,7 @@ export default function CateringOrdersPage() {
             style={{ backgroundColor: "var(--color-brand-primary)" }}
           >
             <Plus size={15} />
-            <span>Create Order</span>
+            <span>Create Buyer Order</span>
           </button>
         </div>
       </div>
@@ -699,7 +699,7 @@ export default function CateringOrdersPage() {
           <span className="text-xl font-mono text-slate-900 mt-1 block" style={{ fontWeight: 500 }}>
             {summaryMetrics.totalOrders}
           </span>
-          <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">All-time catering</span>
+          <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">All-time buyers</span>
         </div>
 
         <div className="p-3.5 rounded-lg border bg-white shadow-2xs" style={{ borderColor: "var(--color-border-base)" }}>
@@ -875,13 +875,13 @@ export default function CateringOrdersPage() {
                 <tr>
                   <td colSpan={9} className="py-16 text-center text-slate-400">
                     <RotateCw size={20} className="animate-spin inline text-[#348bdd] mr-2" />
-                    Loading catering orders...
+                    Loading buyer orders...
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-16 text-center text-slate-400">
-                    No catering orders match the current filter.
+                    No buyer orders match the current filter.
                   </td>
                 </tr>
               ) : (
@@ -905,7 +905,7 @@ export default function CateringOrdersPage() {
                     {/* Delivery Event */}
                     <td className="py-3 px-4">
                       <span className="font-medium text-slate-800 block truncate max-w-[170px]">
-                        {ord.eventName || "Catering Function"}
+                        {ord.eventName || "Buyer Function"}
                       </span>
                       <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1">
                         <Clock size={10} className="text-slate-400" />
@@ -1018,7 +1018,7 @@ export default function CateringOrdersPage() {
                 <ClipboardList size={18} />
               </div>
               <div>
-                <h2 className="text-base font-medium text-slate-900">Create Catering Order</h2>
+                <h2 className="text-base font-medium text-slate-900">Create Buyer Order</h2>
                 <span className="text-xs text-slate-500 font-mono">
                   Bulk order booking & advance payment management
                 </span>
@@ -1289,7 +1289,7 @@ export default function CateringOrdersPage() {
 
                   {selectedItems.length === 0 ? (
                     <div className="p-6 text-center text-xs text-slate-400 border border-dashed rounded-lg">
-                      No sweets added yet. Click on sweets above to add to this catering order.
+                      No sweets added yet. Click on sweets above to add to this buyer order.
                     </div>
                   ) : (
                     <div className="rounded-lg border border-slate-200 overflow-hidden bg-white">
@@ -1527,7 +1527,7 @@ export default function CateringOrdersPage() {
                   {orderFinancials.balanceAmount > 0 && (
                     <div className="p-2 rounded bg-amber-50 text-[10px] text-amber-800 border border-amber-200 flex items-center gap-1.5">
                       <AlertTriangle size={13} className="shrink-0 text-amber-600" />
-                      <span>Balance will be automatically tracked in Catering Credits for settlement.</span>
+                      <span>Balance will be automatically tracked in Buyers Credits for settlement.</span>
                     </div>
                   )}
                 </div>
@@ -1826,7 +1826,7 @@ export default function CateringOrdersPage() {
       <ConfirmationModal
         isOpen={Boolean(deletingOrder)}
         title="Delete Order"
-        message={`Are you sure you want to delete catering order "${deletingOrder?.orderNumber}"?`}
+        message={`Are you sure you want to delete buyer order "${deletingOrder?.orderNumber}"?`}
         confirmText="Delete"
         onConfirm={handleDeleteOrder}
         onCancel={() => setDeletingOrder(null)}
