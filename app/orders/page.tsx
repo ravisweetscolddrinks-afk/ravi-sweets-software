@@ -23,6 +23,7 @@ import SearchableSelect from "@/components/SearchableSelect";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import CustomDatePicker from "@/components/CustomDatePicker";
 import CustomTimePicker from "@/components/CustomTimePicker";
+import { A4InvoiceSettings, defaultA4InvoiceSettings } from "@/types/settings";
 import {
   Plus,
   Search,
@@ -281,6 +282,8 @@ export default function OrdersPage() {
     gstNumber: "",
   });
 
+  const [invoiceSettings, setInvoiceSettings] = useState<A4InvoiceSettings>(defaultA4InvoiceSettings);
+
   // --- Full Screen Modal (Add / Edit) States ---
   const [isOrderModalOpen, setIsOrderModalOpen] = useState<boolean>(false);
   const [modalMode, setModalMode] = useState<"create" | "edit" | "view">("create");
@@ -517,6 +520,20 @@ export default function OrdersPage() {
       (err) => console.warn("Realtime roundoff error:", err)
     );
 
+    // Realtime Invoice Settings Listener
+    const unsubInvoice = onSnapshot(
+      doc(db, "settings", "invoice_settings"),
+      (snap) => {
+        if (snap.exists()) {
+          setInvoiceSettings({
+            ...defaultA4InvoiceSettings,
+            ...(snap.data() as Partial<A4InvoiceSettings>),
+          });
+        }
+      },
+      () => {}
+    );
+
     const today = new Date().toISOString().split("T")[0];
     setCurrentDateStr(today);
     setCustomStartDate(today);
@@ -532,6 +549,7 @@ export default function OrdersPage() {
       unsubStores();
       unsubProducts();
       unsubRules();
+      unsubInvoice();
     };
   }, []);
 
@@ -4193,20 +4211,33 @@ export default function OrdersPage() {
             <div>
               {/* Header: Company Details & Invoice Metadata */}
               <div className="pb-6 border-b-2 border-slate-900 flex justify-between items-start gap-6">
-                <div>
-                  <h1 className="text-xl font-medium tracking-tight text-slate-900 uppercase">
-                    {businessProfile.tradeName || "Ravi Sweets"}
-                  </h1>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    Pure Ghee Sweets, Bakery & Savouries
-                  </p>
-                  <p className="text-xs text-slate-600 mt-1 max-w-sm">
-                    {businessProfile.address || "Main Road"}, {businessProfile.city || "Chirala"}, {businessProfile.state || "Andhra Pradesh"} - {businessProfile.pincode || "523155"}
-                  </p>
-                  <div className="text-xs text-slate-700 font-mono mt-1.5 space-y-0.5">
-                    <div>Phone: <span className="text-slate-900">{businessProfile.phone || "+91 94402 61276"}</span> {businessProfile.altPhone && ` / ${businessProfile.altPhone}`}</div>
-                    <div>Email: <span className="text-slate-900">{businessProfile.email || "contact@ravisweets.com"}</span></div>
-                    <div>GSTIN: <span className="font-medium text-slate-900">{resolvedBizGst || "Not Configured"}</span></div>
+                <div className="flex items-start gap-4">
+                  {invoiceSettings.showLogo && invoiceSettings.logoUrl && (
+                    <div className="shrink-0 max-w-[85px] max-h-[65px] p-1 border border-slate-200 rounded bg-white">
+                      <img src={invoiceSettings.logoUrl} alt="Logo" className="max-h-14 max-w-full object-contain" />
+                    </div>
+                  )}
+                  <div>
+                    <h1 className="text-xl font-medium tracking-tight text-slate-900 uppercase">
+                      {businessProfile.tradeName || "Ravi Sweets"}
+                    </h1>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Pure Ghee Sweets, Bakery & Savouries
+                    </p>
+                    <p className="text-xs text-slate-600 mt-1 max-w-sm">
+                      {businessProfile.address || "Main Road"}, {businessProfile.city || "Chirala"}, {businessProfile.state || "Andhra Pradesh"} - {businessProfile.pincode || "523155"}
+                    </p>
+                    <div className="text-xs text-slate-700 font-mono mt-1.5 space-y-0.5">
+                      <div>Phone: <span className="text-slate-900">{businessProfile.phone || "+91 94402 61276"}</span> {businessProfile.altPhone && ` / ${businessProfile.altPhone}`}</div>
+                      <div>Email: <span className="text-slate-900">{businessProfile.email || "contact@ravisweets.com"}</span></div>
+                      <div>GSTIN: <span className="font-medium text-slate-900">{resolvedBizGst || "Not Configured"}</span></div>
+                      {invoiceSettings.showPan && invoiceSettings.panNumber && (
+                        <div>PAN: <span className="font-medium text-slate-900">{invoiceSettings.panNumber}</span></div>
+                      )}
+                      {invoiceSettings.showFssai && invoiceSettings.fssaiNumber && (
+                        <div>FSSAI: <span className="font-medium text-slate-900">{invoiceSettings.fssaiNumber}</span></div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -4422,6 +4453,21 @@ export default function OrdersPage() {
                         {a4InvoiceOrder.packingDescription}
                       </div>
                     )}
+
+                    {/* Bank Remittance Details from Invoice Settings */}
+                    {invoiceSettings.showBankDetails && (
+                      <div className="pt-2 border-t border-slate-200 text-[10px] text-slate-700 font-mono space-y-0.5">
+                        <span className="font-bold text-[#348bdd] block text-[10px] uppercase tracking-wider">
+                          Bank Remittance Details:
+                        </span>
+                        <div>Bank: <strong className="text-slate-900">{invoiceSettings.bankName || "State Bank of India"}</strong></div>
+                        <div>A/C Name: <strong className="text-slate-900">{invoiceSettings.accountName || businessProfile.tradeName}</strong></div>
+                        <div>A/C No: <strong className="text-slate-900">{invoiceSettings.accountNumber || "123456789012"}</strong></div>
+                        <div>IFSC: <strong className="text-slate-900">{invoiceSettings.ifscCode || "SBIN0000823"}</strong></div>
+                        {invoiceSettings.branch && <div>Branch: {invoiceSettings.branch}</div>}
+                        {invoiceSettings.upiId && <div>UPI: <strong className="text-slate-900">{invoiceSettings.upiId}</strong></div>}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -4494,32 +4540,56 @@ export default function OrdersPage() {
                 <span className="font-medium text-slate-800 uppercase tracking-wider block mb-1">
                   Terms & Conditions:
                 </span>
-                <ol className="list-decimal pl-4 space-y-0.5 text-slate-500">
-                  <li>Goods once sold will not be taken back or exchanged.</li>
-                  <li>Milk sweets, dairy items, and fresh cakes should be refrigerated and consumed within 24 hours.</li>
-                  <li>Advance paid for custom, party, or bulk festival orders is non-refundable once production starts.</li>
-                  <li>Subject to Chirala jurisdiction only.</li>
-                </ol>
+                {invoiceSettings.termsAndConditions ? (
+                  <div className="whitespace-pre-line text-slate-500 text-[9.5px] leading-relaxed">
+                    {invoiceSettings.termsAndConditions}
+                  </div>
+                ) : (
+                  <ol className="list-decimal pl-4 space-y-0.5 text-slate-500">
+                    <li>Goods once sold will not be taken back or exchanged.</li>
+                    <li>Milk sweets, dairy items, and fresh cakes should be refrigerated and consumed within 24 hours.</li>
+                    <li>Advance paid for custom, party, or bulk festival orders is non-refundable once production starts.</li>
+                    <li>Subject to Chirala jurisdiction only.</li>
+                  </ol>
+                )}
               </div>
             </div>
 
             {/* Bottom Signatures */}
-            <div className="pt-10 border-t border-slate-300 flex justify-between items-end text-xs text-slate-700">
+            <div className="pt-8 border-t border-slate-300 flex justify-between items-end text-xs text-slate-700">
               <div className="text-center w-48">
                 <div className="border-t border-slate-400 pt-1.5 font-medium text-slate-800">
                   Customer Signature
                 </div>
               </div>
 
-              <div className="text-center w-56">
-                <div className="text-[11px] text-slate-500 mb-6">
-                  For {businessProfile.tradeName || "Ravi Sweets & Cold Drinks"}
+              <div className="text-center w-56 flex flex-col items-center">
+                <div className="text-[11px] text-slate-500 mb-1">
+                  {invoiceSettings.signatoryCompany || `For ${businessProfile.tradeName || "Ravi Sweets & Cold Drinks"}`}
                 </div>
-                <div className="border-t border-slate-400 pt-1.5 font-medium text-slate-800">
-                  Authorized Signatory
+                {invoiceSettings.showSignature && invoiceSettings.signatureUrl ? (
+                  <div className="my-1 border border-slate-200 rounded p-1 bg-white">
+                    <img
+                      src={invoiceSettings.signatureUrl}
+                      alt="Authorized Signature"
+                      className="max-h-12 max-w-[140px] object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="h-8" />
+                )}
+                <div className="border-t border-slate-400 pt-1.5 font-medium text-slate-800 w-full text-center">
+                  {invoiceSettings.signatoryName || "Authorized Signatory"}
                 </div>
               </div>
             </div>
+
+            {/* Footer Note */}
+            {invoiceSettings.footerNote && (
+              <div className="text-center text-[8.5px] text-slate-400 pt-3 border-t border-slate-100">
+                {invoiceSettings.footerNote}
+              </div>
+            )}
           </div>
             );
           })()}

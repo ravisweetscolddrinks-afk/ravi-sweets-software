@@ -290,7 +290,7 @@ export default function CaterersPage() {
               className="text-2xl text-[var(--color-text-primary)] tracking-tight"
               style={{ fontWeight: 500 }}
             >
-              Caterers
+              Buyers
             </h1>
             <span
               className="px-2 py-0.5 text-xs rounded font-normal font-mono"
@@ -307,7 +307,7 @@ export default function CaterersPage() {
             className="text-xs mt-1"
             style={{ color: "var(--color-text-muted)" }}
           >
-            Manage catering partners, contact phone numbers, MPINs, delivery cities, and order history.
+            Manage buyer profiles, contact phone numbers, MPINs, delivery cities, and catering order history.
           </p>
         </div>
 
@@ -319,7 +319,7 @@ export default function CaterersPage() {
             style={{ backgroundColor: "var(--color-brand-primary)" }}
           >
             <Plus size={15} />
-            <span>Add Caterer</span>
+            <span>Add Buyer</span>
           </button>
         </div>
       </div>
@@ -376,7 +376,7 @@ export default function CaterersPage() {
             <Search size={14} style={{ color: "var(--color-text-muted)" }} />
             <input
               type="text"
-              placeholder="Search by caterer name, mobile, city, address..."
+              placeholder="Search by buyer name, mobile, city, address..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full text-xs bg-transparent focus:outline-none"
@@ -414,7 +414,7 @@ export default function CaterersPage() {
                   color: "var(--color-text-secondary)",
                 }}
               >
-                <th className="py-2.5 px-4">Caterer Name</th>
+                <th className="py-2.5 px-4">Buyer Name</th>
                 <th className="py-2.5 px-4">Mobile Number</th>
                 <th className="py-2.5 px-4 text-center">MPIN</th>
                 <th className="py-2.5 px-4">City</th>
@@ -429,13 +429,13 @@ export default function CaterersPage() {
                 <tr>
                   <td colSpan={8} className="py-16 text-center text-slate-400">
                     <RotateCw size={20} className="animate-spin inline text-[#348bdd] mr-2" />
-                    Loading caterers...
+                    Loading buyers...
                   </td>
                 </tr>
               ) : paginatedCaterers.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-16 text-center text-slate-400">
-                    No caterers found for the selected filter.
+                    No buyers found for the selected filter.
                   </td>
                 </tr>
               ) : (
@@ -635,7 +635,7 @@ export default function CaterersPage() {
                   <Users size={16} />
                 </div>
                 <h3 className="text-sm font-medium text-slate-800">
-                  {editingCatererId ? "Edit Caterer" : "Add Caterer"}
+                  {editingCatererId ? "Edit Buyer" : "Add Buyer"}
                 </h3>
               </div>
               <button
@@ -651,7 +651,7 @@ export default function CaterersPage() {
               {/* Name */}
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 uppercase tracking-wider mb-1">
-                  Caterer Name <span className="text-rose-500">*</span>
+                  Buyer Name <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -759,7 +759,7 @@ export default function CaterersPage() {
                   style={{ backgroundColor: "var(--color-brand-primary)" }}
                 >
                   {isSubmitting ? <RotateCw size={13} className="animate-spin" /> : <Check size={14} />}
-                  <span>{editingCatererId ? "Save Changes" : "Save Caterer"}</span>
+                  <span>{editingCatererId ? "Save Changes" : "Save Buyer"}</span>
                 </button>
               </div>
             </form>
@@ -770,8 +770,8 @@ export default function CaterersPage() {
       {/* 5. Delete Confirmation Modal */}
       <ConfirmationModal
         isOpen={Boolean(deletingCaterer)}
-        title="Delete Caterer"
-        message={`Are you sure you want to delete caterer "${deletingCaterer?.name}"?`}
+        title="Delete Buyer"
+        message={`Are you sure you want to delete buyer "${deletingCaterer?.name}"?`}
         confirmText="Delete"
         onConfirm={handleDeleteCaterer}
         onCancel={() => setDeletingCaterer(null)}

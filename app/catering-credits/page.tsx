@@ -360,11 +360,11 @@ export default function CateringCreditsPage() {
         </div>
 
         <div className="p-3.5 rounded-lg border bg-white shadow-2xs" style={{ borderColor: "var(--color-border-base)" }}>
-          <span className="text-[11px] text-slate-500 block">Caterers with Dues</span>
+          <span className="text-[11px] text-slate-500 block">Buyers with Dues</span>
           <span className="text-xl font-mono text-slate-900 mt-1 block" style={{ fontWeight: 500 }}>
             {summaryMetrics.caterersWithDuesCount}
           </span>
-          <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">Partners with credit</span>
+          <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">Buyers with credit</span>
         </div>
 
         <div className="p-3.5 rounded-lg border bg-emerald-50/50 border-emerald-200 shadow-2xs">
@@ -461,7 +461,7 @@ export default function CateringCreditsPage() {
             <Search size={14} style={{ color: "var(--color-text-muted)" }} />
             <input
               type="text"
-              placeholder="Search by caterer name, phone, city, order #..."
+              placeholder="Search by buyer name, phone, city, order #..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full text-xs bg-transparent focus:outline-none"
@@ -482,7 +482,7 @@ export default function CateringCreditsPage() {
               onChange={(e) => setSelectedCatererFilter(e.target.value)}
               className="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none"
             >
-              <option value="all">All Caterers With Dues</option>
+              <option value="all">All Buyers With Dues</option>
               {caterers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.mobile})

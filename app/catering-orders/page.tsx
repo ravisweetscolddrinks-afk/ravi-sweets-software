@@ -807,7 +807,7 @@ export default function CateringOrdersPage() {
               onChange={(e) => setSelectedCatererFilter(e.target.value)}
               className="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none"
             >
-              <option value="all">All Caterers</option>
+              <option value="all">All Buyers</option>
               {caterers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.mobile})
@@ -1066,7 +1066,7 @@ export default function CateringOrdersPage() {
                         </div>
                       </div>
                     ) : (
-                      <span className="text-xs text-slate-400">Click to select caterer...</span>
+                      <span className="text-xs text-slate-400">Click to select buyer...</span>
                     )}
 
                     <ChevronDown size={16} className="text-slate-400 shrink-0" />
@@ -1086,7 +1086,7 @@ export default function CateringOrdersPage() {
                         <Search size={13} className="text-slate-400" />
                         <input
                           type="text"
-                          placeholder="Search caterer by name or mobile..."
+                          placeholder="Search buyer by name or mobile..."
                           value={catererDropdownSearch}
                           onChange={(e) => setCatererDropdownSearch(e.target.value)}
                           autoFocus
@@ -1098,7 +1098,7 @@ export default function CateringOrdersPage() {
                       <div className="max-h-52 overflow-y-auto space-y-1">
                         {dropdownFilteredCaterers.length === 0 ? (
                           <div className="py-4 text-center text-xs text-slate-400">
-                            No caterers found matching &quot;{catererDropdownSearch}&quot;
+                            No buyers found matching &quot;{catererDropdownSearch}&quot;
                           </div>
                         ) : (
                           dropdownFilteredCaterers.map((cat) => (

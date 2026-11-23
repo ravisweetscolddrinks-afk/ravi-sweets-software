@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   UserCog,
   Download,
+  ReceiptText,
 } from "lucide-react";
 import { usePrinter } from "@/context/PrinterContext";
 import { useAuth } from "@/context/AuthContext";
@@ -178,6 +179,16 @@ export default function TopNavbar({
 
       {/* Right side: Tools, Search, User, PWA Install & Logout */}
       <div className="flex items-center gap-2 shrink-0 text-xs">
+        {/* POS Counter Shortcut Button */}
+        <Link
+          href="/pos"
+          className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium text-white shadow-2xs hover:brightness-105 active:scale-95 transition-all cursor-pointer"
+          style={{ backgroundColor: "var(--color-brand-primary)" }}
+          title="Open POS Billing Counter"
+        >
+          <ReceiptText size={14} />
+          <span>POS</span>
+        </Link>
         {/* PWA Install Button if available */}
         {isInstallable && !isInstalled && (
           <button

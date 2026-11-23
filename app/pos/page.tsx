@@ -18,6 +18,7 @@ import {
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
 import { usePrinter } from "@/context/PrinterContext";
+import Link from "next/link";
 import {
   Receipt,
   Barcode,
@@ -46,6 +47,7 @@ import {
   ArrowRight,
   Sparkles,
   Scale,
+  ShoppingBag,
 } from "lucide-react";
 import { RoundoffRule, findMatchingRoundoffRule } from "@/types/roundoff";
 
@@ -1146,8 +1148,18 @@ export default function PosBillingPage() {
           </div>
         </div>
 
-        {/* Store Selector, Drafts Button, Printer Status */}
+        {/* Store Selector, Go to Sales, Drafts Button, Printer Status */}
         <div className="flex items-center gap-2.5 text-xs">
+          {/* Go to Sales Shortcut Button */}
+          <Link
+            href="/walk-in-sales"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-sky-200 bg-sky-50 hover:bg-sky-100 text-[#348bdd] font-medium transition-colors shadow-2xs cursor-pointer text-xs shrink-0"
+            title="View All Walk-In Counter Sales & Receipts"
+          >
+            <ShoppingBag size={14} />
+            <span>Go to Sales</span>
+          </Link>
+
           {/* Store Selector */}
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg p-1">
             <Store size={13} className="text-[#348bdd] ml-1" />

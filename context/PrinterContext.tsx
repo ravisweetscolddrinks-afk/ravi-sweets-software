@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
+import { ThermalBillSettings, defaultThermalBillSettings } from "@/types/settings";
 
 export type PrinterConnectionType = "usb" | "bluetooth";
 export type PaperSize = "3inch" | "2inch"; // 3inch = 80mm, 2inch = 58mm
@@ -366,7 +367,8 @@ function buildEscPosBuffer(
   data: ReturnType<typeof enrichReceiptData>,
   paperSize: PaperSize,
   autoCut: boolean,
-  maskedPhone: string
+  maskedPhone: string,
+  billConfig: ThermalBillSettings = defaultThermalBillSettings
 ): Uint8Array {
   const bytes: number[] = [];
   const push = (...b: number[]) => bytes.push(...b);
@@ -391,17 +393,26 @@ function buildEscPosBuffer(
   // 2. Header (Center Aligned)
   push(0x1b, 0x61, 0x01); // Center
   push(0x1b, 0x21, 0x30); // Double height + double width for main title
-  pushLine((data.tradeName || "RAVI SWEETS").toUpperCase());
+  const headerName = (billConfig.headerTitle?.trim() || data.tradeName || "RAVI SWEETS").toUpperCase();
+  pushLine(headerName);
   push(0x1b, 0x21, 0x00); // Normal size
-  // NOTE: Print ONLY the single business name configured in settings.
-  // Avoid printing secondary store name or hardcoded tagline to prevent duplicate names.
-  if (data.storeAddress) pushLine(data.storeAddress);
-  if (data.storePhone) pushLine("Ph: " + data.storePhone);
-  if (data.storeEmail) pushLine("Email: " + data.storeEmail);
-  if (data.gstNumber) {
+
+  if (billConfig.showTagline && billConfig.tagline) {
+    push(0x1b, 0x45, 0x01);
+    pushLine(billConfig.tagline);
+    push(0x1b, 0x45, 0x00);
+  }
+  if (billConfig.showAddress && data.storeAddress) pushLine(data.storeAddress);
+  if (billConfig.showPhone && data.storePhone) pushLine("Ph: " + data.storePhone);
+  if (billConfig.showEmail && data.storeEmail) pushLine("Email: " + data.storeEmail);
+  if (billConfig.showGstin && data.gstNumber) {
     push(0x1b, 0x45, 0x01);
     pushLine("GSTIN: " + data.gstNumber);
     push(0x1b, 0x45, 0x00);
+  }
+  const fssai = billConfig.fssaiNumber || data.fssaiNumber;
+  if (billConfig.showFssai && fssai) {
+    pushLine("FSSAI Lic: " + fssai);
   }
   pushLine(divider);
   push(0x1b, 0x45, 0x01);
@@ -412,17 +423,24 @@ function buildEscPosBuffer(
   // 3. Bill Meta (Left Aligned)
   push(0x1b, 0x61, 0x00); // Left align
   pushLine(`Bill #: ${data.orderNumber}`);
-  pushLine(`Date  : ${data.dateStr}  ${data.timeStr}`);
+  if (billConfig.showDateAndTime) {
+    pushLine(`Date  : ${data.dateStr}  ${data.timeStr}`);
+  }
   if (data.deliveryDate && data.deliveryDate !== data.dateStr) {
     pushLine(`Deliv : ${data.deliveryDate} ${data.deliveryTime || ""}`.trim());
   }
-  if (data.customerName && data.customerName !== "Walk-In Customer") {
-    pushLine(`Cust  : ${data.customerName}`);
-    if (data.customerPhone) pushLine(`Phone : ${maskedPhone}`);
-    if (data.customerAddress) pushLine(`Addr  : ${data.customerAddress}`);
-    if (data.customerGstNumber) pushLine(`C-GST : ${data.customerGstNumber}`);
-  } else {
-    pushLine(`Type  : Walk-In Counter Takeaway`);
+  if (billConfig.showCashierName) {
+    pushLine(`Counter: Main POS Register`);
+  }
+  if (billConfig.showCustomerDetails) {
+    if (data.customerName && data.customerName !== "Walk-In Customer") {
+      pushLine(`Cust  : ${data.customerName}`);
+      if (data.customerPhone) pushLine(`Phone : ${maskedPhone}`);
+      if (data.customerAddress) pushLine(`Addr  : ${data.customerAddress}`);
+      if (data.customerGstNumber) pushLine(`C-GST : ${data.customerGstNumber}`);
+    } else {
+      pushLine(`Type  : Walk-In Counter Takeaway`);
+    }
   }
 
   pushLine(divider);
@@ -515,15 +533,24 @@ function buildEscPosBuffer(
   // 7. Footer
   push(0x1b, 0x61, 0x01); // Center
   pushLine(doubleDivider);
-  pushLine("Thank You! Visit Again");
-  pushLine("Pure Ghee Sweets & Savouries Since 1984");
-  if (data.fssaiNumber) pushLine(`FSSAI Lic: ${data.fssaiNumber}`);
+  if (billConfig.footerMessage1) {
+    pushLine(billConfig.footerMessage1);
+  }
+  if (billConfig.showTerms && billConfig.footerMessage2) {
+    pushLine(billConfig.footerMessage2);
+  }
+  if (billConfig.showUpiQr && billConfig.upiId) {
+    pushLine(`Pay via UPI: ${billConfig.upiId}`);
+  }
+  if (!billConfig.footerMessage1 && !billConfig.footerMessage2) {
+    pushLine("Thank You! Visit Again");
+  }
 
   // 8. Feed 5 lines for tear-off
   push(0x1b, 0x64, 0x05);
 
   // 9. Hardware Auto-Cut
-  if (autoCut) {
+  if (autoCut && billConfig.autoCut !== false) {
     push(0x1d, 0x56, 0x41, 0x00); // Full cut
   }
 
@@ -556,6 +583,7 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
     gstPercentage: 5,
     pricingType: "inclusive",
   });
+  const [billConfig, setBillConfig] = useState<ThermalBillSettings>(defaultThermalBillSettings);
 
   useEffect(() => {
     const unsubBiz = onSnapshot(
@@ -596,9 +624,23 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
       () => {}
     );
 
+    const unsubBill = onSnapshot(
+      doc(db, "settings", "bill_settings"),
+      (snap) => {
+        if (snap.exists()) {
+          setBillConfig({
+            ...defaultThermalBillSettings,
+            ...(snap.data() as Partial<ThermalBillSettings>),
+          });
+        }
+      },
+      () => {}
+    );
+
     return () => {
       unsubBiz();
       unsubGst();
+      unsubBill();
     };
   }, []);
 
@@ -841,7 +883,7 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
 
         try {
           const { outEp } = await setupUsbDevice(device);
-          const rawBuffer = buildEscPosBuffer(enriched, settings.paperSize, settings.autoCut, maskedPhone);
+          const rawBuffer = buildEscPosBuffer(enriched, settings.paperSize, settings.autoCut, maskedPhone, billConfig);
           const result = await device.transferOut(outEp, rawBuffer);
           if (result.status === "ok") {
             showToast("Printed successfully via USB!", "success");
@@ -867,7 +909,7 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
 
         try {
           const char = bluetoothCharRef.current;
-          const rawBuffer = buildEscPosBuffer(enriched, settings.paperSize, settings.autoCut, maskedPhone);
+          const rawBuffer = buildEscPosBuffer(enriched, settings.paperSize, settings.autoCut, maskedPhone, billConfig);
           const CHUNK = 128;
           for (let i = 0; i < rawBuffer.length; i += CHUNK) {
             const chunk = rawBuffer.slice(i, i + CHUNK);
@@ -1008,20 +1050,25 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
         >
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "15px", fontWeight: "bold", letterSpacing: "0.5px" }}>
-              {(activeReceipt.tradeName || bizSettings.tradeName || "RAVI SWEETS").toUpperCase()}
+              {(billConfig.headerTitle?.trim() || activeReceipt.tradeName || bizSettings.tradeName || "RAVI SWEETS").toUpperCase()}
             </div>
-            {/* Display ONLY the single business name configured in settings */}
-            {activeReceipt.storeAddress && (
+            {billConfig.showTagline && billConfig.tagline && (
+              <div style={{ fontSize: "9px", fontWeight: "bold" }}>{billConfig.tagline}</div>
+            )}
+            {billConfig.showAddress && activeReceipt.storeAddress && (
               <div style={{ fontSize: "8px" }}>{activeReceipt.storeAddress}</div>
             )}
-            {activeReceipt.storePhone && (
+            {billConfig.showPhone && activeReceipt.storePhone && (
               <div style={{ fontSize: "8px" }}>Ph: {activeReceipt.storePhone}</div>
             )}
-            {activeReceipt.storeEmail && (
+            {billConfig.showEmail && activeReceipt.storeEmail && (
               <div style={{ fontSize: "8px" }}>Email: {activeReceipt.storeEmail}</div>
             )}
-            {activeReceipt.gstNumber && (
+            {billConfig.showGstin && activeReceipt.gstNumber && (
               <div style={{ fontSize: "8.5px", fontWeight: "bold" }}>GSTIN: {activeReceipt.gstNumber}</div>
+            )}
+            {billConfig.showFssai && (billConfig.fssaiNumber || activeReceipt.fssaiNumber) && (
+              <div style={{ fontSize: "8px" }}>FSSAI: {billConfig.fssaiNumber || activeReceipt.fssaiNumber}</div>
             )}
             <div style={{ fontSize: "9.5px", fontWeight: "bold", marginTop: "2px" }}>
               {activeReceipt.billTitle || (activeReceipt.hasGst ? "TAX INVOICE" : "BILL RECEIPT")}
@@ -1214,12 +1261,19 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
           <div style={{ borderTop: "1px double #000", margin: "4px 0" }} />
 
           <div style={{ textAlign: "center", fontSize: "9px", marginTop: "3px" }}>
-            <div>Thank You! Visit Again</div>
-            <div style={{ fontSize: "8px", color: "#444", marginTop: "1px" }}>
-              Quality Sweets & Ghee Specialties Since 1984
-            </div>
-            {activeReceipt.fssaiNumber && (
-              <div style={{ fontSize: "7.5px" }}>FSSAI Lic No: {activeReceipt.fssaiNumber}</div>
+            {billConfig.footerMessage1 && <div>{billConfig.footerMessage1}</div>}
+            {billConfig.showTerms && billConfig.footerMessage2 && (
+              <div style={{ fontSize: "8px", color: "#444", marginTop: "1px" }}>
+                {billConfig.footerMessage2}
+              </div>
+            )}
+            {billConfig.showUpiQr && billConfig.upiId && (
+              <div style={{ fontSize: "8px", color: "#000", marginTop: "1px", fontWeight: "bold" }}>
+                UPI: {billConfig.upiId}
+              </div>
+            )}
+            {!billConfig.footerMessage1 && !billConfig.footerMessage2 && (
+              <div>Thank You! Visit Again</div>
             )}
           </div>
           {settings.autoCut && (

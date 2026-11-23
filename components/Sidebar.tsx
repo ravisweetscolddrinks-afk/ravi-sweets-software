@@ -139,7 +139,7 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     isAccordion: true,
     children: [
       {
-        name: "Caterers",
+        name: "Buyers",
         href: "/caterers",
         icon: Users,
       },
