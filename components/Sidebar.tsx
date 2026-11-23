@@ -30,16 +30,28 @@ import {
   FileText,
   Barcode,
   ClipboardList,
+  UtensilsCrossed,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
-export interface NavItem {
+export interface NavSubItem {
   name: string;
   href: string;
   aliases?: string[];
   icon: React.ElementType;
   badge?: string;
+}
+
+export interface NavItem {
+  name: string;
+  href?: string;
+  aliases?: string[];
+  icon: React.ElementType;
+  badge?: string;
   category?: string;
+  isAccordion?: boolean;
+  children?: NavSubItem[];
 }
 
 export const SIDEBAR_ITEMS: NavItem[] = [
@@ -121,6 +133,31 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     category: "Inventory & Operations",
   },
   {
+    name: "Catering Manager",
+    icon: UtensilsCrossed,
+    category: "Inventory & Operations",
+    isAccordion: true,
+    children: [
+      {
+        name: "Caterers",
+        href: "/caterers",
+        icon: Users,
+      },
+      {
+        name: "Catering Orders",
+        href: "/catering-orders",
+        aliases: ["/catering-order"],
+        icon: ClipboardList,
+      },
+      {
+        name: "Catering Credits",
+        href: "/catering-credits",
+        aliases: ["/catering-dues"],
+        icon: Wallet,
+      },
+    ],
+  },
+  {
     name: "Manufacturing Portal",
     href: "/manufacturing-portal",
     icon: Cpu,
@@ -199,6 +236,9 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const { currentUser, canAccess, logout } = useAuth();
+  const [openAccordions, setOpenAccordions] = React.useState<Record<string, boolean>>({
+    "Catering Manager": true, // Default open as requested
+  });
   const [hoveredItem, setHoveredItem] = React.useState<{
     name: string;
     category?: string;
@@ -206,19 +246,45 @@ export default function Sidebar({
     left: number;
   } | null>(null);
 
+  const toggleAccordion = (name: string) => {
+    setOpenAccordions((prev) => ({
+      ...prev,
+      [name]: !prev[name],
+    }));
+  };
+
   const visibleItems = React.useMemo(() => {
     if (!currentUser) return [];
     if (currentUser.role === "admin") return SIDEBAR_ITEMS;
 
     return SIDEBAR_ITEMS.filter((item) => {
-      return canAccess(item.href);
+      if (item.isAccordion && item.children) {
+        return item.children.some((c) => canAccess(c.href));
+      }
+      return item.href ? canAccess(item.href) : false;
     });
   }, [currentUser, canAccess]);
 
   const isItemActive = (item: NavItem) => {
+    if (item.isAccordion && item.children) {
+      return item.children.some((c) => {
+        if (pathname === c.href) return true;
+        if (c.aliases && c.aliases.includes(pathname)) return true;
+        if (c.href !== "/" && pathname.startsWith(c.href)) return true;
+        return false;
+      });
+    }
+    if (!item.href) return false;
     if (pathname === item.href) return true;
     if (item.aliases && item.aliases.includes(pathname)) return true;
     if (item.href !== "/" && pathname.startsWith(item.href)) return true;
+    return false;
+  };
+
+  const isSubItemActive = (sub: NavSubItem) => {
+    if (pathname === sub.href) return true;
+    if (sub.aliases && sub.aliases.includes(pathname)) return true;
+    if (sub.href !== "/" && pathname.startsWith(sub.href)) return true;
     return false;
   };
 
@@ -285,10 +351,136 @@ export default function Sidebar({
             const Icon = item.icon;
             const active = isItemActive(item);
 
+            // Accordion Item (e.g. Catering Manager)
+            if (item.isAccordion && item.children) {
+              const isOpen = openAccordions[item.name] ?? false;
+
+              return (
+                <div key={item.name} className="flex flex-col space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => toggleAccordion(item.name)}
+                    onMouseEnter={(e) => {
+                      if (isCollapsed) {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setHoveredItem({
+                          name: item.name,
+                          category: item.category,
+                          top: rect.top + rect.height / 2,
+                          left: rect.right + 10,
+                        });
+                      }
+                    }}
+                    onMouseLeave={() => setHoveredItem(null)}
+                    className={`group relative flex items-center ${
+                      isCollapsed ? "justify-center p-2.5" : "justify-between px-3 py-2"
+                    } rounded-md text-[13px] transition-colors duration-150 cursor-pointer w-full text-left`}
+                    style={{
+                      backgroundColor: active
+                        ? "var(--color-bg-active)"
+                        : "transparent",
+                      color: active
+                        ? "var(--color-text-primary)"
+                        : "var(--color-text-secondary)",
+                      fontWeight: active ? 500 : 400,
+                      border: active
+                        ? "1px solid var(--color-border-base)"
+                        : "1px solid transparent",
+                      margin: 0,
+                    }}
+                  >
+                    <div
+                      className={`flex items-center ${
+                        isCollapsed ? "justify-center" : "gap-2.5"
+                      } min-w-0`}
+                    >
+                      <Icon
+                        size={17}
+                        className="shrink-0 transition-colors"
+                        style={{
+                          color: active
+                            ? "var(--color-brand-primary)"
+                            : "var(--color-text-muted)",
+                        }}
+                      />
+                      {!isCollapsed && (
+                        <span className="truncate tracking-tight font-medium">{item.name}</span>
+                      )}
+                    </div>
+
+                    {!isCollapsed && (
+                      <ChevronDown
+                        size={14}
+                        className={`text-slate-400 transition-transform duration-200 shrink-0 ${
+                          isOpen ? "rotate-0" : "-rotate-90"
+                        }`}
+                      />
+                    )}
+
+                    {/* Active Indicator bar when collapsed */}
+                    {isCollapsed && active && (
+                      <div
+                        className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r"
+                        style={{ backgroundColor: "var(--color-brand-primary)" }}
+                      />
+                    )}
+                  </button>
+
+                  {/* Accordion Sub-items */}
+                  {!isCollapsed && isOpen && (
+                    <div className="pl-3 pr-1 py-0.5 space-y-0.5 border-l-2 ml-4 border-slate-100">
+                      {item.children.map((sub) => {
+                        const SubIcon = sub.icon;
+                        const subActive = isSubItemActive(sub);
+
+                        return (
+                          <Link
+                            key={sub.name}
+                            href={sub.href}
+                            onClick={onCloseMobile}
+                            className="group flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors duration-150 cursor-pointer"
+                            style={{
+                              backgroundColor: subActive
+                                ? "var(--color-brand-primary-light)"
+                                : "transparent",
+                              color: subActive
+                                ? "var(--color-brand-primary-text)"
+                                : "var(--color-text-secondary)",
+                              fontWeight: subActive ? 500 : 400,
+                            }}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <SubIcon
+                                size={14}
+                                className="shrink-0"
+                                style={{
+                                  color: subActive
+                                    ? "var(--color-brand-primary)"
+                                    : "var(--color-text-muted)",
+                                }}
+                              />
+                              <span className="truncate">{sub.name}</span>
+                            </div>
+
+                            {subActive && (
+                              <div
+                                className="w-1.5 h-1.5 rounded-full shrink-0"
+                                style={{ backgroundColor: "var(--color-brand-primary)" }}
+                              />
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             return (
               <Link
                 key={item.name}
-                href={item.href}
+                href={item.href || "#"}
                 onClick={onCloseMobile}
                 onMouseEnter={(e) => {
                   if (isCollapsed) {
