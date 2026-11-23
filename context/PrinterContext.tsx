@@ -31,7 +31,7 @@ export interface ReceiptData {
   billTitle?: string;
   tradeName?: string;
   legalName?: string;
-  storeName: string;
+  storeName?: string;
   storePhone?: string;
   storeAddress?: string;
   storeEmail?: string;
@@ -99,7 +99,7 @@ function enrichReceiptData(
     .filter(Boolean)
     .join(", ");
 
-  const tradeName = raw.tradeName || biz.tradeName || "RAVI SWEETS";
+  const tradeName = biz.tradeName || raw.tradeName || "RAVI SWEETS";
   const legalName = raw.legalName || biz.legalName || "";
   const storeAddress = raw.storeAddress || fullBizAddress || "Chirala, Andhra Pradesh";
   const storePhone = raw.storePhone || biz.phone || "";
@@ -393,10 +393,8 @@ function buildEscPosBuffer(
   push(0x1b, 0x21, 0x30); // Double height + double width for main title
   pushLine((data.tradeName || "RAVI SWEETS").toUpperCase());
   push(0x1b, 0x21, 0x00); // Normal size
-  push(0x1b, 0x45, 0x01); // Bold ON
-  pushLine("SWEETS, BAKERY & COLD DRINKS");
-  push(0x1b, 0x45, 0x00); // Bold OFF
-  if (data.storeName) pushLine(data.storeName);
+  // NOTE: Print ONLY the single business name configured in settings.
+  // Avoid printing secondary store name or hardcoded tagline to prevent duplicate names.
   if (data.storeAddress) pushLine(data.storeAddress);
   if (data.storePhone) pushLine("Ph: " + data.storePhone);
   if (data.storeEmail) pushLine("Email: " + data.storeEmail);
@@ -1010,12 +1008,9 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
         >
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "15px", fontWeight: "bold", letterSpacing: "0.5px" }}>
-              {(activeReceipt.tradeName || "RAVI SWEETS").toUpperCase()}
+              {(activeReceipt.tradeName || bizSettings.tradeName || "RAVI SWEETS").toUpperCase()}
             </div>
-            <div style={{ fontSize: "9.5px", fontWeight: "bold" }}>
-              SWEETS, BAKERY & COLD DRINKS
-            </div>
-            <div style={{ fontSize: "9px" }}>{activeReceipt.storeName || "Chirala Main Store"}</div>
+            {/* Display ONLY the single business name configured in settings */}
             {activeReceipt.storeAddress && (
               <div style={{ fontSize: "8px" }}>{activeReceipt.storeAddress}</div>
             )}

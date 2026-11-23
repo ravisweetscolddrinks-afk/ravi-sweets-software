@@ -1405,9 +1405,9 @@ export default function OrdersPage() {
       deliveryDate: order.deliveryDate || "",
       deliveryTime: order.deliveryTime || "",
       billTitle: tax.hasGst ? "TAX INVOICE" : "ORDER RECEIPT",
-      tradeName: businessProfile.tradeName || "Ravi Sweets & Cold Drinks",
-      legalName: businessProfile.legalName || "Ravi Sweets",
-      storeName: order.storeName || storeObj?.name || "Main Chirala Store",
+      tradeName: businessProfile.tradeName || "Ravi Sweets",
+      legalName: businessProfile.legalName || "",
+      storeName: "",
       storePhone: storeObj?.phone || businessProfile.phone || "",
       storeAddress: storeObj?.address || fullBizAddress || "Chirala, AP",
       storeEmail: businessProfile.email || "",
@@ -4195,10 +4195,10 @@ export default function OrdersPage() {
               <div className="pb-6 border-b-2 border-slate-900 flex justify-between items-start gap-6">
                 <div>
                   <h1 className="text-xl font-medium tracking-tight text-slate-900 uppercase">
-                    {businessProfile.tradeName || "Ravi Sweets & Cold Drinks"}
+                    {businessProfile.tradeName || "Ravi Sweets"}
                   </h1>
                   <p className="text-xs text-slate-600 mt-0.5">
-                    {businessProfile.legalName || "Ravi Sweets"} • Pure Ghee Sweets, Bakery & Savouries
+                    Pure Ghee Sweets, Bakery & Savouries
                   </p>
                   <p className="text-xs text-slate-600 mt-1 max-w-sm">
                     {businessProfile.address || "Main Road"}, {businessProfile.city || "Chirala"}, {businessProfile.state || "Andhra Pradesh"} - {businessProfile.pincode || "523155"}

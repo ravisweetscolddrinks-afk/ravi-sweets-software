@@ -291,10 +291,9 @@ export default function StoreStockEntryPage() {
     (product: ProductItem) => {
       const existing = rowInputs[product.id];
       if (existing) return existing;
-      const defaultUnit = product.unit.toLowerCase() === "piece" ? "piece" : product.unit || "KG";
       return {
-        quantity: "",
-        unit: defaultUnit,
+        quantity: "1",
+        unit: "Tray",
         mode: "inward" as "inward" | "set",
       };
     },
@@ -302,9 +301,9 @@ export default function StoreStockEntryPage() {
   );
 
   const handleRowInputChange = useCallback(
-    (productId: string, field: "quantity" | "unit" | "mode", value: string, defaultUnit: string) => {
+    (productId: string, field: "quantity" | "unit" | "mode", value: string, defaultUnit: string = "Tray") => {
       setRowInputs((prev) => {
-        const current = prev[productId] || { quantity: "", unit: defaultUnit, mode: "inward" };
+        const current = prev[productId] || { quantity: "1", unit: defaultUnit, mode: "inward" };
         return {
           ...prev,
           [productId]: {
@@ -412,12 +411,13 @@ export default function StoreStockEntryPage() {
         { merge: true }
       );
 
-      // Reset the row's quantity input
+      // Reset the row's quantity input back to 1 Tray
       setRowInputs((prev) => ({
         ...prev,
         [product.id]: {
           ...input,
-          quantity: "",
+          quantity: "1",
+          unit: "Tray",
         },
       }));
 
@@ -694,7 +694,7 @@ export default function StoreStockEntryPage() {
               ) : (
                 <>
                   <CheckCircle2 size={13} />
-                  <span>Save All ({enteredItemsCount})</span>
+                  <span>Add All ({enteredItemsCount})</span>
                 </>
               )}
             </button>
@@ -914,35 +914,35 @@ export default function StoreStockEntryPage() {
                             className="w-16 px-2 py-1 text-xs border border-slate-200 rounded-md bg-white font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#348bdd] text-right shadow-2xs"
                           />
 
-                          {/* Unit Selector Dropdown (Allows selecting Tray, piece, KG, litre) */}
+                          {/* Unit Selector Dropdown (Defaults to Tray) */}
                           <select
                             value={rowInput.unit}
                             onChange={(e) =>
-                              handleRowInputChange(product.id, "unit", e.target.value, product.unit)
+                              handleRowInputChange(product.id, "unit", e.target.value, "Tray")
                             }
                             className="px-1.5 py-1 text-xs border border-slate-200 rounded-md bg-white text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-[#348bdd] cursor-pointer shadow-2xs"
                           >
-                            <option value="KG">KG</option>
                             <option value="Tray">Tray</option>
+                            <option value="KG">KG</option>
                             <option value="piece">piece</option>
                             <option value="litre">litre</option>
                           </select>
 
-                          {/* Save Button */}
+                          {/* Add Button */}
                           <button
                             type="button"
                             disabled={!rowInput.quantity || Number(rowInput.quantity) <= 0 || savingId === product.id}
                             onClick={() => handleSaveRowStock(product)}
                             className="px-2.5 py-1 rounded-md text-white font-medium text-xs cursor-pointer shadow-2xs flex items-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-105 active:scale-[0.98] shrink-0"
                             style={{ backgroundColor: "var(--color-brand-primary)" }}
-                            title="Save stock entry directly (or press Enter)"
+                            title="Add stock entry directly (or press Enter)"
                           >
                             {savingId === product.id ? (
                               <Loader2 size={12} className="animate-spin" />
                             ) : (
                               <>
                                 <Plus size={12} />
-                                <span>Save</span>
+                                <span>Add</span>
                               </>
                             )}
                           </button>

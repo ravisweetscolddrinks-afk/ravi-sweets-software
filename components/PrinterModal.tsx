@@ -50,7 +50,6 @@ export default function PrinterModal() {
       orderNumber: "TEST-001",
       dateStr: new Date().toISOString().split("T")[0],
       timeStr: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      storeName: "Ravi Sweets - Chirala Main Store",
       storePhone: "+91 98480 12345",
       storeAddress: "Station Road, Chirala, AP - 523155",
       customerName: "Siva Krishna",

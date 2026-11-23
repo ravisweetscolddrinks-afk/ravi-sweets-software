@@ -126,6 +126,17 @@ function calculateRowKg(
   return 0;
 }
 
+function createDefaultRowDrafts(productList: CatalogProduct[]): Record<string, RowDraft> {
+  const drafts: Record<string, RowDraft> = {};
+  productList.forEach((p) => {
+    drafts[p.id] = {
+      unit: "Tray",
+      quantity: "1",
+    };
+  });
+  return drafts;
+}
+
 export default function WorkSheetPage() {
   const { showToast } = useToast();
   const { printWorksheet } = usePrinter();
@@ -210,6 +221,10 @@ export default function WorkSheetPage() {
           };
         });
         setProducts(list);
+        setRowDrafts((prev) => {
+          if (Object.keys(prev).length > 0) return prev;
+          return createDefaultRowDrafts(list);
+        });
         setIsLoadingProducts(false);
       },
       (err) => {
@@ -277,16 +292,7 @@ export default function WorkSheetPage() {
     };
   }, []);
 
-  // If products have `showInWorksheet` flagged, default scope to "worksheet" once loaded
-  useEffect(() => {
-    if (!hasAutoCheckedScope && products.length > 0) {
-      const hasFlagged = products.some((p) => p.showInWorksheet);
-      if (hasFlagged) {
-        setProductScope("worksheet");
-      }
-      setHasAutoCheckedScope(true);
-    }
-  }, [products, hasAutoCheckedScope]);
+  // Keep product scope as "all" by default so all products with 1 Tray are displayed and selected
 
   const worksheetFlaggedCount = useMemo(
     () => products.filter((p) => p.showInWorksheet).length,
@@ -368,10 +374,10 @@ export default function WorkSheetPage() {
     });
   }, [products, productScope, rowDrafts, categoryFilter, itemSearch]);
 
-  // Row interaction handlers — by default NO unit is selected
+  // Row interaction handlers — by default Tray & 1 are selected for all products
   const handleSelectUnit = (productId: string, unit: WorksheetUnit) => {
     setRowDrafts((prev) => {
-      const current = prev[productId] || { unit: "", quantity: "" };
+      const current = prev[productId] || { unit: "Tray", quantity: "1" };
       // Clicking the already-selected unit toggles it off (deselects)
       const nextUnit = current.unit === unit ? "" : unit;
       return {
@@ -386,7 +392,7 @@ export default function WorkSheetPage() {
 
   const handleQuantityChange = (productId: string, val: string) => {
     setRowDrafts((prev) => {
-      const current = prev[productId] || { unit: "", quantity: "" };
+      const current = prev[productId] || { unit: "Tray", quantity: "1" };
       return {
         ...prev,
         [productId]: {
@@ -398,11 +404,10 @@ export default function WorkSheetPage() {
   };
 
   const handleClearRow = (productId: string) => {
-    setRowDrafts((prev) => {
-      const next = { ...prev };
-      delete next[productId];
-      return next;
-    });
+    setRowDrafts((prev) => ({
+      ...prev,
+      [productId]: { unit: "", quantity: "" },
+    }));
   };
 
   const handleResetForm = () => {
@@ -410,7 +415,8 @@ export default function WorkSheetPage() {
     setEditingWorksheetNumber("");
     setWorksheetDate(getTodayStr());
     setWorksheetNote("");
-    setRowDrafts({});
+    setRowDrafts(createDefaultRowDrafts(products));
+    setProductScope("all");
     setItemSearch("");
   };
 
@@ -866,6 +872,32 @@ export default function WorkSheetPage() {
               >
                 Selected Only ({selectedEntries.length})
               </button>
+
+              <div className="h-4 w-px bg-slate-200 mx-1 hidden sm:block" />
+
+              <button
+                type="button"
+                onClick={() => setRowDrafts(createDefaultRowDrafts(products))}
+                className="px-2.5 py-1.5 rounded-md text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer shadow-2xs font-medium"
+                title="Select all products with 1 Tray by default"
+              >
+                Select All (1 Tray)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const emptyDrafts: Record<string, RowDraft> = {};
+                  products.forEach((p) => {
+                    emptyDrafts[p.id] = { unit: "", quantity: "" };
+                  });
+                  setRowDrafts(emptyDrafts);
+                }}
+                className="px-2.5 py-1.5 rounded-md text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 cursor-pointer shadow-2xs"
+                title="Clear all selections"
+              >
+                Clear All
+              </button>
             </div>
           </div>
 
@@ -887,7 +919,7 @@ export default function WorkSheetPage() {
                     <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-mono uppercase text-slate-500">
                       <th className="py-2.5 px-4 w-10 text-center">#</th>
                       <th className="py-2.5 px-4">Item Name</th>
-                      <th className="py-2.5 px-4">Select Unit (None by default)</th>
+                      <th className="py-2.5 px-4">Select Unit (Tray by default)</th>
                       <th className="py-2.5 px-4 w-36">Quantity</th>
                       <th className="py-2.5 px-4 w-44 text-right">Calculated KG</th>
                       <th className="py-2.5 px-3 w-12 text-center"></th>
@@ -895,7 +927,7 @@ export default function WorkSheetPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {displayedProducts.map((prod, idx) => {
-                      const draft = rowDrafts[prod.id] || { unit: "", quantity: "" };
+                      const draft = rowDrafts[prod.id] || { unit: "Tray", quantity: "1" };
                       const qtyNum = Number(draft.quantity) || 0;
                       const isRowActive = Boolean(draft.unit && qtyNum > 0);
                       const isMissingUnit = Boolean(!draft.unit && qtyNum > 0);
