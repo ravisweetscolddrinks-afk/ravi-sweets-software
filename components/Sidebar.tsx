@@ -32,6 +32,7 @@ import {
   ClipboardList,
   UtensilsCrossed,
   ChevronDown,
+  Warehouse,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -123,6 +124,13 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     href: "/manufacturing-stock-analysis",
     aliases: ["/stock-analysis", "/manufacturing-analysis"],
     icon: LineChart,
+    category: "Inventory & Operations",
+  },
+  {
+    name: "Warehouse Entry",
+    href: "/warehouse-entry",
+    aliases: ["/warehouse", "/warehouse-entries"],
+    icon: Warehouse,
     category: "Inventory & Operations",
   },
   {
