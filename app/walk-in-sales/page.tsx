@@ -7,6 +7,8 @@ import {
   query,
   orderBy,
   onSnapshot,
+  updateDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { usePrinter } from "@/context/PrinterContext";
@@ -35,6 +37,10 @@ import {
   FileText,
   Download,
   FileSpreadsheet,
+  Clock,
+  AlertCircle,
+  CheckCircle2,
+  Coins,
 } from "lucide-react";
 
 interface SaleItem {
@@ -64,9 +70,19 @@ interface WalkInSaleRecord {
   cgst: number;
   sgst: number;
   grandTotal: number;
+  receivedAmount?: number;
+  balanceAmount?: number;
   paymentMethod: string;
+  creditPartialMethod?: string;
   splitDetails?: { cash: number; upi: number; card: number };
   paymentStatus: string;
+  paymentHistory?: {
+    id: string;
+    amount: number;
+    paymentMethod: string;
+    date: string;
+    note?: string;
+  }[];
   deliveryDate: string;
   deliveryTime: string;
   createdAt: any;
@@ -121,6 +137,77 @@ export default function WalkInSalesPage() {
 
   // View modal
   const [viewingSale, setViewingSale] = useState<WalkInSaleRecord | null>(null);
+
+  // Collect Due Payment State
+  const [collectAmount, setCollectAmount] = useState<string>("");
+  const [collectPaymentMode, setCollectPaymentMode] = useState<"Cash" | "UPI" | "Card">("Cash");
+  const [collectNote, setCollectNote] = useState<string>("");
+  const [isCollecting, setIsCollecting] = useState<boolean>(false);
+
+  // Synchronize collect due input when viewing sale changes
+  useEffect(() => {
+    if (viewingSale && viewingSale.balanceAmount !== undefined && Number(viewingSale.balanceAmount) > 0) {
+      setCollectAmount(String(viewingSale.balanceAmount));
+      setCollectNote("Counter Credit Due Clearance");
+    } else {
+      setCollectAmount("");
+      setCollectNote("");
+    }
+  }, [viewingSale]);
+
+  // Handle Collecting Remaining Credit Due for a Walk-In Bill
+  const handleCollectDuePayment = async () => {
+    if (!viewingSale) return;
+    const numAmt = Number(collectAmount);
+    if (isNaN(numAmt) || numAmt <= 0) {
+      showToast("Please enter a valid payment amount", "error");
+      return;
+    }
+    const currentReceived = Number(viewingSale.receivedAmount) || 0;
+    const grandTotal = Number(viewingSale.grandTotal) || 0;
+    const newReceived = Math.min(grandTotal, Number((currentReceived + numAmt).toFixed(2)));
+    const newBalance = Math.max(0, Number((grandTotal - newReceived).toFixed(2)));
+    const newStatus = newBalance <= 0 ? "Done" : "Partial";
+
+    setIsCollecting(true);
+    try {
+      const newHistoryItem = {
+        id: `inst_${Date.now()}`,
+        amount: numAmt,
+        paymentMethod: collectPaymentMode,
+        date: new Date().toISOString(),
+        note: collectNote.trim() || `Collected ₹${numAmt} via ${collectPaymentMode}`,
+      };
+
+      const updatedHistory = [...(viewingSale.paymentHistory || []), newHistoryItem];
+
+      await updateDoc(doc(db, "walk_in_sales", viewingSale.id), {
+        receivedAmount: newReceived,
+        balanceAmount: newBalance,
+        paymentStatus: newStatus,
+        paymentHistory: updatedHistory,
+      });
+
+      setViewingSale((prev) =>
+        prev
+          ? {
+              ...prev,
+              receivedAmount: newReceived,
+              balanceAmount: newBalance,
+              paymentStatus: newStatus,
+              paymentHistory: updatedHistory,
+            }
+          : null
+      );
+
+      showToast(`Recorded payment of ₹${numAmt}! Remaining balance: ₹${newBalance}`, "success");
+    } catch (err: any) {
+      console.error("Error collecting payment:", err);
+      showToast("Failed to record payment: " + err.message, "error");
+    } finally {
+      setIsCollecting(false);
+    }
+  };
 
   // 1. Subscribe to Walk-In Sales & Stores in Real-Time
   useEffect(() => {
@@ -435,8 +522,8 @@ export default function WalkInSalesPage() {
       gstType: tax.gstType,
       roundOff: tax.roundOff,
       grandTotal: tax.grandTotal,
-      receivedAmount: tax.grandTotal,
-      balanceAmount: 0,
+      receivedAmount: sale.receivedAmount !== undefined ? sale.receivedAmount : tax.grandTotal,
+      balanceAmount: sale.balanceAmount !== undefined ? sale.balanceAmount : 0,
       paymentStatus: sale.paymentStatus || "Done",
       paymentMethod: sale.paymentMethod,
       splitDetails: sale.splitDetails,
@@ -458,6 +545,8 @@ export default function WalkInSalesPage() {
         const timeStr = sale.deliveryTime || (sale.createdAt?.toDate ? sale.createdAt.toDate().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "");
         const itemsOverview = sale.items?.map((i) => `${i.name} (${i.quantity} ${i.unit})`).join(", ") || "";
         const totalQty = sale.items?.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0) || 0;
+        const paidAmt = sale.receivedAmount !== undefined ? sale.receivedAmount : tax.grandTotal;
+        const dueAmt = sale.balanceAmount !== undefined ? sale.balanceAmount : 0;
 
         return {
           "S.No": index + 1,
@@ -478,6 +567,8 @@ export default function WalkInSalesPage() {
           "Total GST (₹)": tax.totalGst,
           "Round Off (₹)": tax.roundOff,
           "Grand Total (₹)": tax.grandTotal,
+          "Paid Amount (₹)": paidAmt,
+          "Balance Due (₹)": dueAmt,
           "Payment Mode": sale.paymentMethod || "Cash",
           "Cash (₹)": sale.paymentMethod === "Cash" ? tax.grandTotal : (sale.splitDetails?.cash || 0),
           "UPI (₹)": sale.paymentMethod === "UPI" ? tax.grandTotal : (sale.splitDetails?.upi || 0),
@@ -779,6 +870,7 @@ export default function WalkInSalesPage() {
             <option value="UPI">UPI</option>
             <option value="Card">Card</option>
             <option value="Split">Split</option>
+            <option value="Credit">Credit (Due/Partial)</option>
           </select>
 
           {/* Search Box */}
@@ -966,16 +1058,35 @@ export default function WalkInSalesPage() {
                               ? "bg-sky-50 text-sky-700 border-sky-200"
                               : sale.paymentMethod === "Card"
                               ? "bg-purple-50 text-purple-700 border-purple-200"
+                              : sale.paymentMethod === "Credit"
+                              ? sale.paymentStatus === "Unpaid"
+                                ? "bg-rose-100 text-rose-800 border-rose-300 font-bold"
+                                : sale.paymentStatus === "Partial"
+                                ? "bg-amber-100 text-amber-800 border-amber-300 font-bold"
+                                : "bg-emerald-50 text-emerald-700 border-emerald-200 font-medium"
                               : "bg-amber-50 text-amber-700 border-amber-200"
                           }`}
                         >
-                          {sale.paymentMethod}
+                          {sale.paymentMethod === "Credit"
+                            ? sale.paymentStatus === "Unpaid"
+                              ? "Credit (Unpaid)"
+                              : sale.paymentStatus === "Partial"
+                              ? "Credit (Partial)"
+                              : "Credit (Done)"
+                            : sale.paymentMethod}
                         </span>
                       </td>
 
                       {/* Grand Total */}
-                      <td className="py-2.5 px-3 text-right font-mono font-extrabold text-sm text-[#348bdd] bg-blue-50/25">
-                        ₹{sale.grandTotal}
+                      <td className="py-2.5 px-3 text-right font-mono bg-blue-50/25">
+                        <div className="font-extrabold text-sm text-[#348bdd]">
+                          ₹{sale.grandTotal}
+                        </div>
+                        {sale.balanceAmount !== undefined && Number(sale.balanceAmount) > 0 && (
+                          <div className="text-[10px] text-rose-600 font-bold font-mono">
+                            Due: ₹{sale.balanceAmount}
+                          </div>
+                        )}
                       </td>
 
                       {/* Actions */}
@@ -1167,10 +1278,36 @@ export default function WalkInSalesPage() {
                       </div>
                     )}
                     <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-slate-900">
-                      <span>Grand Total Paid:</span>
+                      <span>Grand Total:</span>
                       <span className="text-[#348bdd]">₹{saleTax.grandTotal.toFixed(2)}</span>
                     </div>
+                    <div className="flex justify-between text-slate-700 text-xs font-semibold">
+                      <span>Amount Received:</span>
+                      <span className="text-emerald-700 font-mono">
+                        ₹{(viewingSale.receivedAmount !== undefined ? viewingSale.receivedAmount : saleTax.grandTotal).toFixed(2)}
+                      </span>
+                    </div>
+                    {viewingSale.balanceAmount !== undefined && Number(viewingSale.balanceAmount) > 0 && (
+                      <div className="flex justify-between text-rose-700 text-xs font-bold pt-1 border-t border-rose-100">
+                        <span>Balance Due (Credit):</span>
+                        <span className="font-mono">₹{Number(viewingSale.balanceAmount).toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-slate-500 text-[11px] pt-1">
+                      <span>Payment Status:</span>
+                      <span
+                        className={`font-semibold px-2 py-0.5 rounded text-[10px] ${
+                          viewingSale.paymentStatus === "Unpaid"
+                            ? "bg-rose-100 text-rose-800 border border-rose-200"
+                            : viewingSale.paymentStatus === "Partial"
+                            ? "bg-amber-100 text-amber-800 border border-amber-200"
+                            : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                        }`}
+                      >
+                        {viewingSale.paymentStatus || "Done"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-slate-500 text-[11px]">
                       <span>Payment Mode:</span>
                       <span className="font-semibold text-slate-800">{viewingSale.paymentMethod}</span>
                     </div>
@@ -1184,6 +1321,105 @@ export default function WalkInSalesPage() {
                   </div>
                 );
               })()}
+
+              {/* Payment History Timeline */}
+              {viewingSale.paymentHistory && viewingSale.paymentHistory.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-mono text-slate-500 uppercase flex items-center justify-between">
+                    <span>Payment History ({viewingSale.paymentHistory.length})</span>
+                    <Clock size={12} className="text-slate-400" />
+                  </div>
+                  <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100 bg-slate-50/50">
+                    {viewingSale.paymentHistory.map((inst, hIdx) => (
+                      <div key={hIdx} className="p-2.5 flex items-center justify-between text-xs">
+                        <div>
+                          <div className="font-semibold text-slate-800">
+                            ₹{inst.amount.toFixed(2)}{" "}
+                            <span className="text-[11px] font-normal text-slate-500">
+                              via {inst.paymentMethod}
+                            </span>
+                          </div>
+                          {inst.note && (
+                            <div className="text-[10px] text-slate-400 mt-0.5">{inst.note}</div>
+                          )}
+                        </div>
+                        <div className="text-right text-[10px] font-mono text-slate-500">
+                          {inst.date ? new Date(inst.date).toLocaleDateString() : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Collect Due Payment Form */}
+              {viewingSale.balanceAmount !== undefined && Number(viewingSale.balanceAmount) > 0 && (
+                <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/50 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-rose-900 flex items-center gap-1.5">
+                      <Coins size={14} className="text-rose-600" />
+                      Collect Due Payment (Balance: ₹{viewingSale.balanceAmount})
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-600 font-medium block mb-1">
+                        Amount to Collect (₹)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max={viewingSale.balanceAmount}
+                        step="any"
+                        value={collectAmount}
+                        onChange={(e) => setCollectAmount(e.target.value)}
+                        className="w-full px-2.5 py-1 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-rose-500 shadow-2xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-600 font-medium block mb-1">
+                        Payment Method
+                      </label>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(["Cash", "UPI", "Card"] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setCollectPaymentMode(m)}
+                            className={`py-1 text-[10px] font-semibold rounded border cursor-pointer transition-colors ${
+                              collectPaymentMode === m
+                                ? "bg-rose-600 text-white border-rose-600 shadow-2xs font-bold"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isCollecting || !collectAmount || Number(collectAmount) <= 0}
+                    onClick={handleCollectDuePayment}
+                    className="w-full py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 active:scale-[0.99] disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    {isCollecting ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" />
+                        <span>Recording Payment...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={13} />
+                        <span>Record Payment of ₹{collectAmount || 0}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}

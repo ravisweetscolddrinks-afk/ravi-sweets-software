@@ -77,6 +77,7 @@ import {
   Scale,
   Download,
   FileSpreadsheet,
+  Star,
 } from "lucide-react";
 import { RoundoffRule, findMatchingRoundoffRule } from "@/types/roundoff";
 
@@ -199,6 +200,7 @@ export interface ProductCatalogItem {
   packingUnitId?: string;
   packingUnitName?: string;
   piecesPerKg?: number | string;
+  isFavourite?: boolean;
 }
 
 type DateFilterType =
@@ -503,6 +505,7 @@ export default function OrdersPage() {
             packingUnitId: data.packingUnitId || "",
             packingUnitName: data.packingUnitName || "",
             piecesPerKg: data.piecesPerKg || "",
+            isFavourite: Boolean(data.isFavourite || data.isFavorite),
           });
         });
         setProductsList(Array.from(pMap.values()));
@@ -743,6 +746,20 @@ export default function OrdersPage() {
     }
   }, [splitDetails, paymentMethod]);
 
+  // Toggle Favourite Status
+  const handleToggleFavorite = async (e: React.MouseEvent, productId: string, currentFav?: boolean) => {
+    e.stopPropagation();
+    try {
+      await updateDoc(doc(db, "products", productId), {
+        isFavourite: !currentFav,
+      });
+      showToast(!currentFav ? "Added to favourites ⭐" : "Removed from favourites", "info");
+    } catch (err: any) {
+      console.error("Toggle favourite error:", err);
+      showToast("Failed to update favourite: " + err.message, "error");
+    }
+  };
+
   // --- 5. Catalog Item Click Handler ---
   const handleCatalogItemClick = (product: ProductCatalogItem) => {
     if (modalMode === "view") return;
@@ -896,17 +913,25 @@ export default function OrdersPage() {
     setSelectedItems((prev) => prev.filter((i) => i.id !== lineId));
   };
 
-  // Filtered product catalog for modal
+  // Filtered & Sorted product catalog for modal (Favourites come first)
   const filteredCatalog = useMemo(() => {
-    if (!productCatalogSearch.trim()) return productsList;
-    const q = productCatalogSearch.toLowerCase().trim();
-    return productsList.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        (p.categoryName && p.categoryName.toLowerCase().includes(q)) ||
-        (p.barcode && p.barcode.toLowerCase().includes(q)) ||
-        (p.shortCode && p.shortCode.toLowerCase().includes(q))
-    );
+    let list = productsList;
+    if (productCatalogSearch.trim()) {
+      const q = productCatalogSearch.toLowerCase().trim();
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          (p.categoryName && p.categoryName.toLowerCase().includes(q)) ||
+          (p.barcode && p.barcode.toLowerCase().includes(q)) ||
+          (p.shortCode && p.shortCode.toLowerCase().includes(q))
+      );
+    }
+    return [...list].sort((a, b) => {
+      const aFav = Boolean(a.isFavourite);
+      const bFav = Boolean(b.isFavourite);
+      if (aFav !== bFav) return aFav ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
   }, [productsList, productCatalogSearch]);
 
   // Quick Customer Creation
@@ -2647,6 +2672,23 @@ export default function OrdersPage() {
                             {isWeight ? `${inCartCount} ${prod.unit}` : `x${inCartCount}`}
                           </div>
                         )}
+
+                        {/* Favourite Pin Toggle Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleFavorite(e, prod.id, prod.isFavourite)}
+                          title={prod.isFavourite ? "Remove favourite" : "Pin to favourites"}
+                          className={`absolute top-2 left-2 z-10 p-1.5 rounded-full transition-all backdrop-blur-xs ${
+                            prod.isFavourite
+                              ? "bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 ring-1 ring-amber-400/40"
+                              : "bg-white/90 text-slate-300 hover:text-amber-500 hover:bg-white shadow-2xs opacity-0 group-hover:opacity-100"
+                          }`}
+                        >
+                          <Star
+                            size={12}
+                            className={prod.isFavourite ? "fill-amber-500 stroke-amber-500" : "stroke-current"}
+                          />
+                        </button>
 
                         {/* 1. Image on top */}
                         <div className="w-full h-28 sm:h-32 rounded-lg bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center p-2 relative group-hover:bg-white transition-colors shrink-0">

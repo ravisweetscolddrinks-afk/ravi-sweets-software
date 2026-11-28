@@ -50,6 +50,7 @@ import {
   Sparkles,
   Scale,
   ShoppingBag,
+  Star,
 } from "lucide-react";
 import { RoundoffRule, findMatchingRoundoffRule } from "@/types/roundoff";
 
@@ -64,6 +65,7 @@ interface ProductCatalogItem {
   shortCode?: string;
   piecesPerKg?: number | string;
   kgPerTray?: number | string;
+  isFavourite?: boolean;
 }
 
 interface PosCartLine {
@@ -111,11 +113,13 @@ interface DraftedBill {
   items: PosCartLine[];
   discount: number;
   paymentMethod: string;
+  creditReceivedAmount?: string;
+  creditPartialMode?: "Cash" | "UPI" | "Card";
   totalAmount: number;
   createdAt: any;
 }
 
-type PaymentMode = "Cash" | "UPI" | "Card" | "Split";
+type PaymentMode = "Cash" | "UPI" | "Card" | "Split" | "Credit";
 
 function getTodayDateStr(): string {
   const now = new Date();
@@ -179,6 +183,8 @@ export default function PosBillingPage() {
     upi: 0,
     card: 0,
   });
+  const [creditReceivedAmount, setCreditReceivedAmount] = useState<string>("");
+  const [creditPartialMode, setCreditPartialMode] = useState<"Cash" | "UPI" | "Card">("Cash");
 
   // Filter & Search
   const [searchBarcode, setSearchBarcode] = useState<string>("");
@@ -228,6 +234,7 @@ export default function PosBillingPage() {
           shortCode: d.data().shortCode || "",
           piecesPerKg: d.data().piecesPerKg || "",
           kgPerTray: d.data().kgPerTray || "",
+          isFavourite: Boolean(d.data().isFavourite || d.data().isFavorite),
         }));
         setProducts(list);
         setIsLoading(false);
@@ -370,9 +377,9 @@ export default function PosBillingPage() {
     return Array.from(set);
   }, [products]);
 
-  // Filtered Catalog
+  // Filtered & Sorted Catalog (Favourites come first)
   const filteredCatalog = useMemo(() => {
-    return products.filter((p) => {
+    const list = products.filter((p) => {
       if (selectedCategory !== "all" && p.categoryName !== selectedCategory) {
         return false;
       }
@@ -384,6 +391,13 @@ export default function PosBillingPage() {
         if (!matchesName && !matchesBarcode && !matchesShort) return false;
       }
       return true;
+    });
+
+    return list.sort((a, b) => {
+      const aFav = Boolean(a.isFavourite);
+      const bFav = Boolean(b.isFavourite);
+      if (aFav !== bFav) return aFav ? -1 : 1;
+      return a.name.localeCompare(b.name);
     });
   }, [products, selectedCategory, productSearch]);
 
@@ -454,6 +468,28 @@ export default function PosBillingPage() {
     };
   }, [rawSubtotal, effectiveSubtotal, discountNum, gstConfig]);
 
+  // Credit / Partial Payment Calculations
+  const creditCalculations = useMemo(() => {
+    const rawVal = Number(creditReceivedAmount) || 0;
+    const numReceived = Math.min(financials.grandTotal, Math.max(0, rawVal));
+    const numBalance = Math.max(0, Number((financials.grandTotal - numReceived).toFixed(2)));
+    const statusLabel =
+      numReceived === 0
+        ? "Unpaid Bill"
+        : numBalance === 0
+        ? "Full Paid"
+        : "Partial Payment";
+    const paymentStatus: "Unpaid" | "Partial" | "Done" =
+      numReceived === 0 ? "Unpaid" : numBalance === 0 ? "Done" : "Partial";
+
+    return {
+      numReceived,
+      numBalance,
+      statusLabel,
+      paymentStatus,
+    };
+  }, [creditReceivedAmount, financials.grandTotal]);
+
   // --- 2. Item Click / Add Logic ---
 
   // Check if product is weight/litre based
@@ -466,6 +502,20 @@ export default function PosBillingPage() {
       u === "liter" ||
       u === "ltr"
     );
+  };
+
+  // Toggle Favourite Status
+  const handleToggleFavorite = async (e: React.MouseEvent, productId: string, currentFav?: boolean) => {
+    e.stopPropagation();
+    try {
+      await updateDoc(doc(db, "products", productId), {
+        isFavourite: !currentFav,
+      });
+      showToast(!currentFav ? "Added to favourites ⭐" : "Removed from favourites", "info");
+    } catch (err: any) {
+      console.error("Toggle favourite error:", err);
+      showToast("Failed to update favourite: " + err.message, "error");
+    }
   };
 
   // Click on catalog item
@@ -784,6 +834,8 @@ export default function PosBillingPage() {
     setSelectedCustomerId("");
     setDiscountAmount("");
     setPaymentMode("Cash");
+    setCreditReceivedAmount("");
+    setCreditPartialMode("Cash");
     setBillingDate(getTodayDateStr());
   };
 
@@ -850,6 +902,8 @@ export default function PosBillingPage() {
         items: cart,
         discount: financials.discount,
         paymentMethod: paymentMode,
+        creditReceivedAmount: paymentMode === "Credit" ? creditReceivedAmount : "",
+        creditPartialMode: paymentMode === "Credit" ? creditPartialMode : "Cash",
         splitDetails:
           paymentMode === "Split"
             ? {
@@ -888,6 +942,12 @@ export default function PosBillingPage() {
     setCart(draft.items || []);
     setDiscountAmount(draft.discount || "");
     setPaymentMode((draft.paymentMethod as PaymentMode) || "Cash");
+    if (draft.creditReceivedAmount !== undefined) {
+      setCreditReceivedAmount(draft.creditReceivedAmount);
+    }
+    if (draft.creditPartialMode) {
+      setCreditPartialMode(draft.creditPartialMode);
+    }
     if (draft.date) {
       setBillingDate(draft.date);
     }
@@ -924,6 +984,15 @@ export default function PosBillingPage() {
       }
     }
 
+    if (paymentMode === "Credit") {
+      // Validate customer selection for credit billing
+      if (!selectedCustomerId && (!currentCustomer || currentCustomer.name === "Walk-In Customer")) {
+        showToast("Please select or add a Customer for Credit billing to track outstanding balance", "error");
+        setIsAddCustomerOpen(true);
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const now = new Date();
@@ -942,6 +1011,11 @@ export default function PosBillingPage() {
       );
 
       const billNumber = generateNumericBillNumber(dateStr);
+
+      const isCredit = paymentMode === "Credit";
+      const numReceived = isCredit ? creditCalculations.numReceived : financials.grandTotal;
+      const numBalance = isCredit ? creditCalculations.numBalance : 0;
+      const paymentStatus = isCredit ? creditCalculations.paymentStatus : "Done";
 
       const saleRecord = {
         billNumber,
@@ -981,9 +1055,10 @@ export default function PosBillingPage() {
         gstNumber: gstConfig.gstNumber || "",
         gstType: gstConfig.pricingType,
         grandTotal: financials.grandTotal,
-        receivedAmount: financials.grandTotal,
-        balanceAmount: 0,
-        paymentMethod: paymentMode,
+        receivedAmount: numReceived,
+        balanceAmount: numBalance,
+        paymentMethod: isCredit ? "Credit" : paymentMode,
+        creditPartialMethod: isCredit && numReceived > 0 ? creditPartialMode : null,
         splitDetails:
           paymentMode === "Split"
             ? {
@@ -992,20 +1067,29 @@ export default function PosBillingPage() {
                 card: Number(splitAmounts.card) || 0,
               }
             : null,
-        paymentHistory: [
-          {
-            id: `inst_${Date.now()}`,
-            amount: financials.grandTotal,
-            paymentMethod: paymentMode,
-            date: recordDateObj.toISOString(),
-            note: "POS Counter Full Payment",
-          },
-        ],
-        paymentStatus: "Done",
+        paymentHistory:
+          numReceived > 0
+            ? [
+                {
+                  id: `inst_${Date.now()}`,
+                  amount: numReceived,
+                  paymentMethod: isCredit ? creditPartialMode : paymentMode,
+                  date: recordDateObj.toISOString(),
+                  note: isCredit
+                    ? numBalance === 0
+                      ? "Credit Bill Full Settlement"
+                      : `Credit Bill Partial Payment (Balance Due: ₹${numBalance})`
+                    : "POS Counter Full Payment",
+                },
+              ]
+            : [],
+        paymentStatus,
         orderStatus: "Delivered",
         deliveryDate: dateStr,
         deliveryTime: timeStr,
-        packingDescription: "Walk-In POS Immediate Counter Takeaway",
+        packingDescription: isCredit
+          ? `Walk-In POS Credit Bill (${paymentStatus}) - Balance Due: ₹${numBalance}`
+          : "Walk-In POS Immediate Counter Takeaway",
         createdAt: isToday ? serverTimestamp() : Timestamp.fromDate(recordDateObj),
       };
 
@@ -1051,7 +1135,14 @@ export default function PosBillingPage() {
         await deleteDoc(doc(db, "drafted_bills", activeDraftId));
       }
 
-      showToast(`Bill #${billNumber} settled successfully!`, "success");
+      if (isCredit) {
+        showToast(
+          `Bill #${billNumber} saved as Credit (${paymentStatus})! Due: ₹${numBalance}`,
+          "success"
+        );
+      } else {
+        showToast(`Bill #${billNumber} settled successfully!`, "success");
+      }
 
       // 5. Trigger thermal receipt print with complete business, GST & customer details
       const fullBizAddress = [businessProfile.address, businessProfile.city, businessProfile.state, businessProfile.pincode]
@@ -1093,10 +1184,14 @@ export default function PosBillingPage() {
         gstType: gstConfig.pricingType,
         roundOff: financials.roundOff,
         grandTotal: financials.grandTotal,
-        receivedAmount: financials.grandTotal,
-        balanceAmount: 0,
-        paymentStatus: "Done",
-        paymentMethod: paymentMode,
+        receivedAmount: numReceived,
+        balanceAmount: numBalance,
+        paymentStatus,
+        paymentMethod: isCredit
+          ? numReceived > 0
+            ? `Credit (${creditPartialMode})`
+            : "Credit"
+          : paymentMode,
         splitDetails:
           paymentMode === "Split"
             ? {
@@ -1379,6 +1474,23 @@ export default function PosBillingPage() {
                       </div>
                     )}
 
+                    {/* Favourite Star Toggle */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleFavorite(e, prod.id, prod.isFavourite)}
+                      title={prod.isFavourite ? "Remove from favourites" : "Pin to favourites"}
+                      className={`absolute top-2 left-2 z-10 p-1.5 rounded-full transition-all backdrop-blur-xs ${
+                        prod.isFavourite
+                          ? "bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 ring-1 ring-amber-400/40"
+                          : "bg-white/90 text-slate-300 hover:text-amber-500 hover:bg-white shadow-2xs opacity-0 group-hover:opacity-100"
+                      }`}
+                    >
+                      <Star
+                        size={12}
+                        className={prod.isFavourite ? "fill-amber-500 stroke-amber-500" : "stroke-current"}
+                      />
+                    </button>
+
                     {/* Image */}
                     <div className="w-full aspect-square rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden mb-2 group-hover:scale-[1.02] transition-transform">
                       {prod.imageUrl ? (
@@ -1611,11 +1723,16 @@ export default function PosBillingPage() {
 
             {/* Payment Method Selector */}
             <div>
-              <div className="text-[10px] font-mono font-medium text-slate-500 uppercase tracking-wide mb-1.5">
-                Payment Method
+              <div className="text-[10px] font-mono font-medium text-slate-500 uppercase tracking-wide mb-1.5 flex items-center justify-between">
+                <span>Payment Method</span>
+                {paymentMode === "Credit" && (
+                  <span className="text-[10px] text-rose-600 font-bold font-mono">
+                    Credit / Due Mode
+                  </span>
+                )}
               </div>
-              <div className="grid grid-cols-4 gap-1.5">
-                {(["Cash", "UPI", "Card", "Split"] as PaymentMode[]).map((mode) => (
+              <div className="grid grid-cols-5 gap-1.5">
+                {(["Cash", "UPI", "Card", "Split", "Credit"] as PaymentMode[]).map((mode) => (
                   <button
                     key={mode}
                     type="button"
@@ -1627,7 +1744,9 @@ export default function PosBillingPage() {
                     }}
                     className={`py-1.5 rounded-md border text-xs font-medium transition-colors cursor-pointer flex flex-col items-center gap-1 ${
                       paymentMode === mode
-                        ? "border-[#348bdd] bg-blue-50/70 text-[#348bdd] shadow-2xs"
+                        ? mode === "Credit"
+                          ? "border-rose-400 bg-rose-50 text-rose-700 shadow-2xs font-semibold"
+                          : "border-[#348bdd] bg-blue-50/70 text-[#348bdd] shadow-2xs"
                         : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                     }`}
                   >
@@ -1635,11 +1754,163 @@ export default function PosBillingPage() {
                     {mode === "UPI" && <Smartphone size={14} />}
                     {mode === "Card" && <CreditCard size={14} />}
                     {mode === "Split" && <Split size={14} />}
+                    {mode === "Credit" && (
+                      <Clock
+                        size={14}
+                        className={paymentMode === "Credit" ? "text-rose-600" : "text-slate-500"}
+                      />
+                    )}
                     <span>{mode}</span>
                   </button>
                 ))}
               </div>
             </div>
+
+            {/* Credit / Partial Payment Details Box */}
+            {paymentMode === "Credit" && (
+              <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/40 space-y-2.5 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-rose-800 font-semibold text-xs">
+                    <Clock size={13} className="text-rose-600" />
+                    <span>Credit / Outstanding Details</span>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                      creditCalculations.numReceived === 0
+                        ? "bg-rose-100 text-rose-800 border-rose-300"
+                        : creditCalculations.numBalance === 0
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-amber-100 text-amber-800 border-amber-300"
+                    }`}
+                  >
+                    {creditCalculations.statusLabel}
+                  </span>
+                </div>
+
+                {/* Amount Received Input & Quick Chips */}
+                <div>
+                  <div className="flex items-center justify-between text-[11px] mb-1">
+                    <span className="font-medium text-slate-700">Received / Partial Amount:</span>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      (0 = Fully Unpaid)
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-2 text-slate-400 font-mono text-xs">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={financials.grandTotal}
+                      step="any"
+                      placeholder="0.00 (Enter amount paid now)"
+                      value={creditReceivedAmount}
+                      onWheel={(e) => (e.target as HTMLElement).blur()}
+                      onChange={(e) => setCreditReceivedAmount(e.target.value)}
+                      className="w-full pl-7 pr-3 py-1.5 text-xs font-mono font-bold rounded-lg border border-rose-200 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                    />
+                  </div>
+
+                  {/* Quick Shortcut Buttons */}
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setCreditReceivedAmount("0")}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium border transition-colors cursor-pointer ${
+                        creditReceivedAmount === "0" || creditReceivedAmount === ""
+                          ? "bg-rose-600 text-white border-rose-600 font-bold"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      ₹0 (Unpaid)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCreditReceivedAmount(String(Math.round(financials.grandTotal * 0.25)))
+                      }
+                      className="px-2 py-0.5 rounded text-[10px] font-mono font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer"
+                    >
+                      25%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCreditReceivedAmount(String(Math.round(financials.grandTotal * 0.5)))
+                      }
+                      className="px-2 py-0.5 rounded text-[10px] font-mono font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer"
+                    >
+                      50%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreditReceivedAmount(String(financials.grandTotal))}
+                      className="px-2 py-0.5 rounded text-[10px] font-mono font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer"
+                    >
+                      Full (₹{financials.grandTotal})
+                    </button>
+                  </div>
+                </div>
+
+                {/* If partial amount received > 0, choose how it was received */}
+                {creditCalculations.numReceived > 0 && (
+                  <div className="pt-1.5 border-t border-rose-200/60">
+                    <div className="text-[10px] font-medium text-slate-600 mb-1">
+                      Partial Amount Received Via:
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {(["Cash", "UPI", "Card"] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setCreditPartialMode(m)}
+                          className={`py-1 text-[11px] font-medium rounded border transition-colors cursor-pointer ${
+                            creditPartialMode === m
+                              ? "bg-rose-600 text-white border-rose-600 shadow-2xs font-bold"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Balance Summary Box */}
+                <div className="p-2 rounded-lg bg-white border border-rose-200/80 text-xs font-mono space-y-1">
+                  <div className="flex justify-between text-slate-600 text-[11px]">
+                    <span>Grand Total:</span>
+                    <span>₹{financials.grandTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-700 text-[11px]">
+                    <span>Amount Paid Now:</span>
+                    <span className="font-bold">₹{creditCalculations.numReceived.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-rose-700 text-xs pt-1 border-t border-slate-100 font-extrabold">
+                    <span>Balance Due (Credit):</span>
+                    <span>₹{creditCalculations.numBalance.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Customer Alert Reminder */}
+                {(!selectedCustomerId || currentCustomer?.name === "Walk-In Customer") && (
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
+                    <div className="flex items-center gap-1.5 pr-1">
+                      <AlertCircle size={13} className="text-amber-600 shrink-0" />
+                      <span>Select a Customer to track credit dues.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddCustomerOpen(true)}
+                      className="px-2 py-0.5 rounded bg-amber-200 hover:bg-amber-300 font-bold text-amber-900 cursor-pointer shrink-0"
+                    >
+                      + Customer
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Action Buttons: Draft & Settle */}
             <div className="grid grid-cols-5 gap-2 pt-2 border-t border-slate-200/80">
@@ -1661,8 +1932,10 @@ export default function PosBillingPage() {
                 type="button"
                 onClick={handleSettleBill}
                 disabled={isSubmitting || cart.length === 0}
-                className="col-span-3 py-2.5 px-3 rounded-md text-white transition-all hover:brightness-105 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed font-medium text-xs cursor-pointer shadow-xs flex items-center justify-center gap-2"
-                style={{ backgroundColor: "var(--color-brand-primary)" }}
+                className={`col-span-3 py-2.5 px-3 rounded-md text-white transition-all hover:brightness-105 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed font-medium text-xs cursor-pointer shadow-xs flex items-center justify-center gap-2 ${
+                  paymentMode === "Credit" ? "bg-rose-600 hover:bg-rose-700" : ""
+                }`}
+                style={paymentMode !== "Credit" ? { backgroundColor: "var(--color-brand-primary)" } : undefined}
               >
                 {isSubmitting ? (
                   <>
@@ -1672,7 +1945,13 @@ export default function PosBillingPage() {
                 ) : (
                   <>
                     <CheckCircle2 size={15} />
-                    <span>Settle Bill</span>
+                    <span>
+                      {paymentMode === "Credit"
+                        ? creditCalculations.numReceived === 0
+                          ? "Save Credit (Unpaid)"
+                          : `Settle Partial (₹${creditCalculations.numReceived})`
+                        : "Settle Bill"}
+                    </span>
                   </>
                 )}
               </button>
