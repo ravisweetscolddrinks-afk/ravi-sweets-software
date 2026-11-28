@@ -32,10 +32,13 @@ import {
   Calendar,
   Scale,
   Plus,
+  Minus,
   RotateCcw,
   FolderTree,
-  CheckCircle2,
   AlertCircle,
+  LayoutGrid,
+  List,
+  Sparkles,
 } from "lucide-react";
 
 type WorksheetUnit = "KG" | "Tray" | "Piece" | "Litre";
@@ -82,6 +85,159 @@ export interface WorksheetRecord {
 }
 
 type DateFilterMode = "today" | "yesterday" | "this_week" | "this_month" | "all" | "custom";
+type EntryViewMode = "sheet" | "table";
+
+export type StatementSectionKey =
+  | "KAJU_ITEMS"
+  | "REGULAR_ITEMS"
+  | "KOVA_ITEMS"
+  | "SWEETS"
+  | "BENGALI_ITEMS"
+  | "BAKLAVAS_ITEMS"
+  | "HOT_ITEMS"
+  | "OTHER_ITEMS";
+
+export interface StatementSectionDef {
+  key: StatementSectionKey;
+  title: string;
+  column: 1 | 2 | 3;
+}
+
+// Visual 3-Column Categorized Sections matching the physical Daily Stock Statement form
+export const STATEMENT_SECTIONS: StatementSectionDef[] = [
+  // Column 1
+  { key: "KAJU_ITEMS", title: "KAJU ITEMS", column: 1 },
+  { key: "REGULAR_ITEMS", title: "REGULAR ITEMS", column: 1 },
+  // Column 2
+  { key: "KOVA_ITEMS", title: "KOVA ITEMS", column: 2 },
+  { key: "SWEETS", title: "SWEETS", column: 2 },
+  // Column 3
+  { key: "BENGALI_ITEMS", title: "BENGALI ITEMS", column: 3 },
+  { key: "BAKLAVAS_ITEMS", title: "BAKLAVA'S ITEMS", column: 3 },
+  { key: "HOT_ITEMS", title: "HOT ITEMS", column: 3 },
+  { key: "OTHER_ITEMS", title: "OTHER ITEMS", column: 3 },
+];
+
+export function getProductStatementSection(product: {
+  name: string;
+  categoryName?: string;
+}): StatementSectionKey {
+  const cat = (product.categoryName || "").toLowerCase().trim();
+  const name = (product.name || "").toLowerCase().trim();
+
+  // 1. KAJU ITEMS
+  if (
+    cat.includes("kaju") ||
+    name.includes("kaju") ||
+    name.includes("badam roll") ||
+    name.includes("badam chikki") ||
+    name.includes("badam rakhi") ||
+    name.includes("karjur") ||
+    name.includes("khajoor") ||
+    name.includes("chikki") ||
+    name.includes("orange bullet")
+  ) {
+    return "KAJU_ITEMS";
+  }
+
+  // 2. KOVA ITEMS
+  if (
+    cat.includes("kova") ||
+    name.includes("kova") ||
+    name.includes("barfy") ||
+    name.includes("agra pan")
+  ) {
+    return "KOVA_ITEMS";
+  }
+
+  // 3. HOT ITEMS (Namkeen / Savories)
+  if (
+    cat.includes("namkeen") ||
+    cat.includes("hot") ||
+    name.includes("pakodi") ||
+    name.includes("pakoda") ||
+    name.includes("mixture") ||
+    name.includes("chekkalu") ||
+    name.includes("ribbon") ||
+    name.includes("chekodi") ||
+    name.includes("pappu") ||
+    name.includes("boondi") ||
+    name.includes("poosa") ||
+    name.includes("chenagalu") ||
+    name.includes("batany") ||
+    name.includes("samosa") ||
+    name.includes("chips") ||
+    name.includes("biscuits")
+  ) {
+    return "HOT_ITEMS";
+  }
+
+  // 4. BENGALI ITEMS (Juicy items)
+  if (
+    cat.includes("juicy") ||
+    cat.includes("bengali") ||
+    name.includes("bengali") ||
+    name.includes("rasagulla") ||
+    name.includes("jam") ||
+    name.includes("rasamalai") ||
+    name.includes("cheesecake")
+  ) {
+    return "BENGALI_ITEMS";
+  }
+
+  // 5. BAKLAVA'S ITEMS
+  if (
+    cat.includes("chocolate") ||
+    cat.includes("baklava") ||
+    name.includes("baklava") ||
+    name.includes("baklawa") ||
+    name.includes("kunafa")
+  ) {
+    return "BAKLAVAS_ITEMS";
+  }
+
+  // 6. SWEETS (Home foods, Marriage Sara, Traditional)
+  if (
+    cat.includes("home") ||
+    cat.includes("marriage") ||
+    cat.includes("sara") ||
+    name.includes("junnu") ||
+    name.includes("soam") ||
+    name.includes("patisa") ||
+    name.includes("sunnundalu") ||
+    name.includes("sunnudalu") ||
+    name.includes("ariselu") ||
+    name.includes("kajj") ||
+    name.includes("muddalu") ||
+    name.includes("bobbatlu") ||
+    name.includes("chilakalu") ||
+    name.includes("dimma") ||
+    name.includes("putha") ||
+    name.includes("burelu") ||
+    name.includes("gavvalu") ||
+    name.includes("vennundalu")
+  ) {
+    return "SWEETS";
+  }
+
+  // 7. REGULAR ITEMS
+  if (
+    cat.includes("regular") ||
+    name.includes("laddu") ||
+    name.includes("badusha") ||
+    name.includes("mysore") ||
+    name.includes("mysure") ||
+    name.includes("halwa") ||
+    name.includes("kaja") ||
+    name.includes("papidi") ||
+    name.includes("papadi") ||
+    name.includes("jangri")
+  ) {
+    return "REGULAR_ITEMS";
+  }
+
+  return "OTHER_ITEMS";
+}
 
 function getTodayStr() {
   const now = new Date();
@@ -144,6 +300,9 @@ export default function WorkSheetPage() {
   // Main Tabs: Create/Edit Work Sheet vs Saved Work Sheets List
   const [activeTab, setActiveTab] = useState<"create" | "list">("create");
 
+  // View Mode inside Create/Edit: "sheet" (3-column Daily Statement) or "table" (tabular list)
+  const [entryViewMode, setEntryViewMode] = useState<EntryViewMode>("sheet");
+
   // Data States
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [worksheets, setWorksheets] = useState<WorksheetRecord[]>([]);
@@ -151,12 +310,12 @@ export default function WorkSheetPage() {
   const [isLoadingWorksheets, setIsLoadingWorksheets] = useState<boolean>(true);
 
   const [businessProfile, setBusinessProfile] = useState({
-    tradeName: "Ravi Sweets & Cold Drinks",
+    tradeName: "Ravi Sweets & Cool Drinks",
     legalName: "Ravi Sweets",
     phone: "",
     altPhone: "",
     email: "",
-    address: "",
+    address: "Shop No. 16, MSR Complex",
     city: "Chirala",
     state: "Andhra Pradesh",
     pincode: "",
@@ -171,11 +330,10 @@ export default function WorkSheetPage() {
   const [rowDrafts, setRowDrafts] = useState<Record<string, RowDraft>>({});
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  // Create Form Filters
+  // Filters & Search
   const [itemSearch, setItemSearch] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [productScope, setProductScope] = useState<"all" | "worksheet" | "selected">("all");
-  const [hasAutoCheckedScope, setHasAutoCheckedScope] = useState<boolean>(false);
 
   // Saved Worksheets List Filters
   const [listSearch, setListSearch] = useState<string>("");
@@ -183,22 +341,30 @@ export default function WorkSheetPage() {
   const [customStartDate, setCustomStartDate] = useState<string>(getTodayStr());
   const [customEndDate, setCustomEndDate] = useState<string>(getTodayStr());
 
-  // Modals & Printing
+  // Modals & Printing States
   const [viewingWorksheet, setViewingWorksheet] = useState<WorksheetRecord | null>(null);
   const [printingA4Worksheet, setPrintingA4Worksheet] = useState<WorksheetRecord | null>(null);
+  const [printingDailyStatement, setPrintingDailyStatement] = useState<{
+    worksheetNumber: string;
+    date: string;
+    note: string;
+    items: WorksheetSavedItem[];
+    isBlank?: boolean;
+  } | null>(null);
   const [deletingWorksheet, setDeletingWorksheet] = useState<WorksheetRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  // Listen to afterprint to unmount A4 printable layout cleanly
+  // Cleanup print layout after print dialog closes
   useEffect(() => {
     const onAfterPrint = () => {
       setPrintingA4Worksheet(null);
+      setPrintingDailyStatement(null);
     };
     window.addEventListener("afterprint", onAfterPrint);
     return () => window.removeEventListener("afterprint", onAfterPrint);
   }, []);
 
-  // Realtime Firestore Listeners (Products, Worksheets, Business Profile, GST Settings)
+  // Realtime Firestore Listeners
   useEffect(() => {
     setIsLoadingProducts(true);
     setIsLoadingWorksheets(true);
@@ -292,8 +458,6 @@ export default function WorkSheetPage() {
     };
   }, []);
 
-  // Keep product scope as "all" by default so all products with 1 Tray are displayed and selected
-
   const worksheetFlaggedCount = useMemo(
     () => products.filter((p) => p.showInWorksheet).length,
     [products]
@@ -332,7 +496,16 @@ export default function WorkSheetPage() {
     return result;
   }, [products, rowDrafts]);
 
-  // Detect any rows where quantity > 0 was typed but no unit was selected yet
+  // Total calculated weight
+  const totalSelectedKg = useMemo(
+    () =>
+      Number(
+        selectedEntries.reduce((acc, item) => acc + (Number(item.calculatedKg) || 0), 0).toFixed(2)
+      ),
+    [selectedEntries]
+  );
+
+  // Incomplete rows count
   const incompleteRowsCount = useMemo(() => {
     let count = 0;
     for (const prod of products) {
@@ -344,15 +517,7 @@ export default function WorkSheetPage() {
     return count;
   }, [products, rowDrafts]);
 
-  const totalSelectedKg = useMemo(
-    () =>
-      Number(
-        selectedEntries.reduce((acc, item) => acc + (Number(item.calculatedKg) || 0), 0).toFixed(2)
-      ),
-    [selectedEntries]
-  );
-
-  // Filtered product rows for the Create/Edit Work Sheet table
+  // Filtered product rows
   const displayedProducts = useMemo(() => {
     return products.filter((p) => {
       if (productScope === "worksheet" && !p.showInWorksheet) return false;
@@ -374,12 +539,123 @@ export default function WorkSheetPage() {
     });
   }, [products, productScope, rowDrafts, categoryFilter, itemSearch]);
 
-  // Row interaction handlers — by default Tray & 1 are selected for all products
+  // Group displayed products into Statement Sections
+  const sectionedProducts = useMemo(() => {
+    const map: Record<StatementSectionKey, CatalogProduct[]> = {
+      KAJU_ITEMS: [],
+      REGULAR_ITEMS: [],
+      KOVA_ITEMS: [],
+      SWEETS: [],
+      BENGALI_ITEMS: [],
+      BAKLAVAS_ITEMS: [],
+      HOT_ITEMS: [],
+      OTHER_ITEMS: [],
+    };
+
+    displayedProducts.forEach((p) => {
+      const sec = getProductStatementSection(p);
+      map[sec].push(p);
+    });
+
+    return map;
+  }, [displayedProducts]);
+
+  // Group all products into sections for Print Daily Stock Statement
+  const allSectionedProducts = useMemo(() => {
+    const map: Record<StatementSectionKey, CatalogProduct[]> = {
+      KAJU_ITEMS: [],
+      REGULAR_ITEMS: [],
+      KOVA_ITEMS: [],
+      SWEETS: [],
+      BENGALI_ITEMS: [],
+      BAKLAVAS_ITEMS: [],
+      HOT_ITEMS: [],
+      OTHER_ITEMS: [],
+    };
+
+    products.forEach((p) => {
+      const sec = getProductStatementSection(p);
+      map[sec].push(p);
+    });
+
+    return map;
+  }, [products]);
+
+  // Row interaction handlers
   const handleSelectUnit = (productId: string, unit: WorksheetUnit) => {
     setRowDrafts((prev) => {
       const current = prev[productId] || { unit: "Tray", quantity: "1" };
-      // Clicking the already-selected unit toggles it off (deselects)
       const nextUnit = current.unit === unit ? "" : unit;
+      return {
+        ...prev,
+        [productId]: {
+          ...current,
+          unit: nextUnit,
+        },
+      };
+    });
+  };
+
+  const handleIncrement = (productId: string) => {
+    setRowDrafts((prev) => {
+      const current = prev[productId] || { unit: "Tray", quantity: "0" };
+      const currentQty = Number(current.quantity) || 0;
+      const nextQty = currentQty + 1;
+      return {
+        ...prev,
+        [productId]: {
+          unit: current.unit || "Tray",
+          quantity: String(nextQty),
+        },
+      };
+    });
+  };
+
+  const handleDecrement = (productId: string) => {
+    setRowDrafts((prev) => {
+      const current = prev[productId] || { unit: "Tray", quantity: "0" };
+      const currentQty = Number(current.quantity) || 0;
+      const nextQty = Math.max(0, currentQty - 1);
+      return {
+        ...prev,
+        [productId]: {
+          unit: nextQty > 0 ? current.unit || "Tray" : "",
+          quantity: nextQty > 0 ? String(nextQty) : "",
+        },
+      };
+    });
+  };
+
+  const handleCardClick = (productId: string) => {
+    setRowDrafts((prev) => {
+      const current = prev[productId] || { unit: "Tray", quantity: "0" };
+      const currentQty = Number(current.quantity) || 0;
+      if (currentQty === 0 || !current.unit) {
+        return {
+          ...prev,
+          [productId]: {
+            unit: "Tray",
+            quantity: "1",
+          },
+        };
+      }
+      return {
+        ...prev,
+        [productId]: {
+          unit: current.unit || "Tray",
+          quantity: String(currentQty + 1),
+        },
+      };
+    });
+  };
+
+  const handleCycleUnit = (productId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRowDrafts((prev) => {
+      const current = prev[productId] || { unit: "Tray", quantity: "1" };
+      const unitOrder: WorksheetUnit[] = ["Tray", "KG", "Piece", "Litre"];
+      const currentIdx = unitOrder.indexOf((current.unit as WorksheetUnit) || "Tray");
+      const nextUnit = unitOrder[(currentIdx + 1) % unitOrder.length];
       return {
         ...prev,
         [productId]: {
@@ -418,9 +694,10 @@ export default function WorkSheetPage() {
     setRowDrafts(createDefaultRowDrafts(products));
     setProductScope("all");
     setItemSearch("");
+    setCategoryFilter("all");
   };
 
-  // Save Work Sheet to Firestore (stores ONLY selected items)
+  // Save Work Sheet to Firestore
   const handleSaveWorksheet = async () => {
     if (!worksheetDate) {
       showToast("Please select a date for the work sheet", "error");
@@ -514,7 +791,7 @@ export default function WorkSheetPage() {
     }
   };
 
-  // Thermal Print Handler (Business Details -> Date -> ONLY Selected Items)
+  // Thermal Print Handler
   const handleThermalPrint = async (ws: WorksheetRecord) => {
     const fullAddress = [
       businessProfile.address,
@@ -545,9 +822,46 @@ export default function WorkSheetPage() {
     });
   };
 
-  // A4 Print Handler (Business Details -> Date -> ONLY Selected Items)
+  // Standard A4 Print Handler
   const handleA4Print = (ws: WorksheetRecord) => {
     setPrintingA4Worksheet(ws);
+    setTimeout(() => {
+      window.print();
+    }, 180);
+  };
+
+  // Daily Stock Statement 3-Column A4 Print Handler (from image)
+  const handlePrintDailyStatement = (
+    target?: WorksheetRecord | null,
+    isBlank: boolean = false
+  ) => {
+    if (isBlank) {
+      setPrintingDailyStatement({
+        worksheetNumber: "BLANK-FORM",
+        date: "",
+        note: "",
+        items: [],
+        isBlank: true,
+      });
+    } else if (target) {
+      setPrintingDailyStatement({
+        worksheetNumber: target.worksheetNumber,
+        date: target.date,
+        note: target.note || "",
+        items: target.items || [],
+        isBlank: false,
+      });
+    } else {
+      // Print current draft
+      setPrintingDailyStatement({
+        worksheetNumber: editingWorksheetNumber || "DRAFT",
+        date: worksheetDate,
+        note: worksheetNote,
+        items: selectedEntries,
+        isBlank: false,
+      });
+    }
+
     setTimeout(() => {
       window.print();
     }, 180);
@@ -604,6 +918,128 @@ export default function WorkSheetPage() {
     });
   }, [worksheets, dateFilter, customStartDate, customEndDate, listSearch]);
 
+  // Helper render for single card row in the 3-column Sheet view
+  const renderSheetItemRow = (prod: CatalogProduct) => {
+    const draft = rowDrafts[prod.id] || { unit: "Tray", quantity: "1" };
+    const qtyNum = Number(draft.quantity) || 0;
+    const isRowActive = Boolean(draft.unit && qtyNum > 0);
+    const isMissingUnit = Boolean(!draft.unit && qtyNum > 0);
+    const calcKg = calculateRowKg(draft.unit, qtyNum, prod);
+
+    return (
+      <div
+        key={prod.id}
+        onClick={() => handleCardClick(prod.id)}
+        className={`px-3 py-2 border-b border-slate-200 flex items-center justify-between gap-2 transition-all cursor-pointer select-none group ${
+          isRowActive
+            ? "bg-blue-50/60 hover:bg-blue-50/90 border-l-4 border-l-[#348bdd]"
+            : isMissingUnit
+            ? "bg-amber-50/60 border-l-4 border-l-amber-400"
+            : "hover:bg-slate-50/80 text-slate-700 border-l-4 border-l-transparent"
+        }`}
+      >
+        {/* Left: Product Name, Tray Rate & Live Weight */}
+        <div className="flex-1 min-w-0 pr-1">
+          <div className="font-semibold text-xs text-slate-900 truncate" title={prod.name}>
+            {prod.name}
+          </div>
+          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+            {prod.kgPerTray > 0 ? (
+              <span>{prod.kgPerTray} kg/tray</span>
+            ) : prod.piecesPerKg > 0 ? (
+              <span>{prod.piecesPerKg} pcs/kg</span>
+            ) : null}
+            {isRowActive && calcKg > 0 && (
+              <span className="text-[#348bdd] font-semibold">
+                • {calcKg.toFixed(2)} KG
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Plus, Minus & Quantity Input Stepper */}
+        <div
+          className="flex items-center gap-1.5 shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Subtle Unit Badge: Tray / KG / Pcs - clicking it cycles unit if needed */}
+          <button
+            type="button"
+            onClick={(e) => handleCycleUnit(prod.id, e)}
+            className="px-1.5 py-1 text-[10px] font-mono font-medium rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 transition-colors cursor-pointer"
+            title="Click to change unit (Tray / KG / Piece / Litre)"
+          >
+            {draft.unit || "Tray"}
+          </button>
+
+          {/* Stepper with Minus (-), Input, and Plus (+) */}
+          <div className="flex items-center border border-slate-300 rounded-lg bg-white overflow-hidden shadow-2xs">
+            <button
+              type="button"
+              onClick={() => handleDecrement(prod.id)}
+              disabled={qtyNum <= 0}
+              className="w-7 h-7 flex items-center justify-center bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-600 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+              title="Decrease quantity (-1)"
+            >
+              <Minus size={13} />
+            </button>
+
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={draft.quantity}
+              onWheel={(e) => e.currentTarget.blur()}
+              onChange={(e) => handleQuantityChange(prod.id, e.target.value)}
+              placeholder="0"
+              className="w-12 h-7 text-center text-xs font-mono font-bold bg-white text-slate-900 border-x border-slate-300 focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+            />
+
+            <button
+              type="button"
+              onClick={() => handleIncrement(prod.id)}
+              className="w-7 h-7 flex items-center justify-center bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-[#348bdd] hover:bg-blue-50 transition-colors cursor-pointer font-bold"
+              title="Increase quantity (+1)"
+            >
+              <Plus size={13} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Helper render for single section block in the 3-column Sheet view
+  const renderSectionBlock = (sectionKey: StatementSectionKey) => {
+    const sectionDef = STATEMENT_SECTIONS.find((s) => s.key === sectionKey);
+    const items = sectionedProducts[sectionKey] || [];
+    if (!sectionDef || items.length === 0) return null;
+
+    const activeCount = items.filter((p) => {
+      const d = rowDrafts[p.id];
+      return d && d.unit && Number(d.quantity) > 0;
+    }).length;
+
+    return (
+      <div key={sectionKey} className="border-b border-slate-300 last:border-b-0">
+        {/* Section Header */}
+        <div className="bg-slate-100/90 px-3 py-1.5 border-y border-slate-300 flex items-center justify-between">
+          <span className="font-bold text-xs uppercase tracking-wide text-slate-900">
+            {sectionDef.title}
+          </span>
+          <span className="text-[10px] font-mono text-slate-500">
+            {activeCount}/{items.length} active
+          </span>
+        </div>
+
+        {/* Items List */}
+        <div className="divide-y divide-slate-100">
+          {items.map((prod) => renderSheetItemRow(prod))}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="p-4 md:p-6 lg:p-8 w-full space-y-5">
       {/* 1. Header */}
@@ -626,7 +1062,7 @@ export default function WorkSheetPage() {
               className="text-2xl text-[var(--color-text-primary)] tracking-tight"
               style={{ fontWeight: 500 }}
             >
-              Work Sheet
+              Work Sheet Entry
             </h1>
             <span
               className="px-2 py-0.5 text-xs rounded font-normal font-mono"
@@ -640,12 +1076,36 @@ export default function WorkSheetPage() {
             </span>
           </div>
           <p className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
-            Select date, choose unit & quantity for required items (with automatic Tray-to-KG calculation), save, and print only selected items on Thermal or A4.
+            Daily Stock Statement entry formatted in categorized 3-column sheet layout with quick unit & quantity inputs, real-time KG calculations, and A4 statement printing.
           </p>
         </div>
 
-        {/* Quick Tab Switch / New Work Sheet */}
-        <div className="flex items-center gap-2">
+        {/* Top Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          {activeTab === "create" && (
+            <>
+              <button
+                type="button"
+                onClick={() => handlePrintDailyStatement(null, false)}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium cursor-pointer shadow-2xs"
+                title="Print Daily Stock Statement (A4 formatted like paper pad)"
+              >
+                <Printer size={13} className="text-[#348bdd]" />
+                <span>Print Statement</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handlePrintDailyStatement(null, true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-[11px] cursor-pointer shadow-2xs"
+                title="Print Blank Daily Stock Statement pad sheet for pen & paper writing"
+              >
+                <FileText size={13} className="text-slate-500" />
+                <span>Print Blank Pad</span>
+              </button>
+            </>
+          )}
+
           {activeTab === "list" && (
             <button
               type="button"
@@ -664,54 +1124,86 @@ export default function WorkSheetPage() {
       </div>
 
       {/* 2. Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 no-print">
-        <button
-          type="button"
-          onClick={() => setActiveTab("create")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
-            activeTab === "create"
-              ? "border-[#348bdd] text-[#348bdd]"
-              : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
-          }`}
-        >
-          <Plus size={15} />
-          <span>{editingWorksheetId ? `Edit #${editingWorksheetNumber}` : "Create Work Sheet"}</span>
-          {selectedEntries.length > 0 && (
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-blue-100 text-[#348bdd]">
-              {selectedEntries.length} selected
-            </span>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("list")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
-            activeTab === "list"
-              ? "border-[#348bdd] text-[#348bdd]"
-              : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
-          }`}
-        >
-          <ClipboardList size={15} />
-          <span>Saved Work Sheets</span>
-          <span
-            className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
-              activeTab === "list"
-                ? "bg-blue-100 text-[#348bdd]"
-                : "bg-slate-100 text-slate-600"
+      <div className="flex items-center justify-between border-b border-slate-200 no-print">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("create")}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
+              activeTab === "create"
+                ? "border-[#348bdd] text-[#348bdd]"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
             }`}
           >
-            {worksheets.length}
-          </span>
-        </button>
+            <Plus size={15} />
+            <span>{editingWorksheetId ? `Edit #${editingWorksheetNumber}` : "Work Sheet Entry"}</span>
+            {selectedEntries.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-blue-100 text-[#348bdd]">
+                {selectedEntries.length} items ({totalSelectedKg.toFixed(1)} KG)
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("list")}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-all cursor-pointer ${
+              activeTab === "list"
+                ? "border-[#348bdd] text-[#348bdd]"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+            }`}
+          >
+            <ClipboardList size={15} />
+            <span>Saved Work Sheets</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                activeTab === "list"
+                  ? "bg-blue-100 text-[#348bdd]"
+                  : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {worksheets.length}
+            </span>
+          </button>
+        </div>
+
+        {/* View Switcher inside Create tab (Statement Sheet vs Table List) */}
+        {activeTab === "create" && (
+          <div className="hidden sm:flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setEntryViewMode("sheet")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer transition-all ${
+                entryViewMode === "sheet"
+                  ? "bg-white text-[#348bdd] shadow-2xs font-semibold"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <LayoutGrid size={13} />
+              <span>Statement Sheet View</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setEntryViewMode("table")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer transition-all ${
+                entryViewMode === "table"
+                  ? "bg-white text-[#348bdd] shadow-2xs font-semibold"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <List size={13} />
+              <span>Table List View</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* =================================================================== */}
-      {/* TAB 1: CREATE / EDIT WORK SHEET                                     */}
+      {/* TAB 1: CREATE / EDIT WORK SHEET (DAILY STOCK STATEMENT FORMAT)       */}
       {/* =================================================================== */}
       {activeTab === "create" && (
         <div className="space-y-4 no-print">
-          {/* Date + Note + Save Bar */}
+          {/* Top Control Bar: Date, Shift/Note, Selection Stats & Save */}
           <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-2xs flex flex-col lg:flex-row lg:items-end justify-between gap-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 max-w-2xl">
               <div>
@@ -732,7 +1224,7 @@ export default function WorkSheetPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Morning Batch, Festival Prep..."
+                  placeholder="e.g. Morning Batch, Festival Prep, Shift A..."
                   value={worksheetNote}
                   onChange={(e) => setWorksheetNote(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
@@ -740,17 +1232,17 @@ export default function WorkSheetPage() {
               </div>
             </div>
 
-            {/* Live Selection Summary & Save Button */}
+            {/* Live Stats + Save Button */}
             <div className="flex flex-wrap items-center gap-3">
-              <div className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono flex items-center gap-3">
+              <div className="px-3.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono flex items-center gap-3">
                 <div>
                   <span className="text-slate-400">Items: </span>
-                  <span className="font-medium text-slate-900">{selectedEntries.length}</span>
+                  <span className="font-semibold text-slate-900">{selectedEntries.length}</span>
                 </div>
                 <div className="h-3.5 w-px bg-slate-200" />
                 <div>
                   <span className="text-slate-400">Total KG: </span>
-                  <span className="font-medium text-[#348bdd]">{totalSelectedKg.toFixed(2)} KG</span>
+                  <span className="font-semibold text-[#348bdd]">{totalSelectedKg.toFixed(2)} KG</span>
                 </div>
               </div>
 
@@ -761,7 +1253,7 @@ export default function WorkSheetPage() {
                   className="px-3 py-2 text-xs rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 flex items-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw size={13} />
-                  <span>{editingWorksheetId ? "Cancel Edit" : "Clear All"}</span>
+                  <span>{editingWorksheetId ? "Cancel Edit" : "Reset All"}</span>
                 </button>
               )}
 
@@ -793,15 +1285,15 @@ export default function WorkSheetPage() {
             </div>
           )}
 
-          {/* Filter Bar for Items List */}
+          {/* Filter & Scope Toolbar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              {/* Search items */}
+              {/* Search */}
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-slate-200 bg-white w-full sm:w-72">
                 <Search size={14} className="text-slate-400 shrink-0" />
                 <input
                   type="text"
-                  placeholder="Search item name or code..."
+                  placeholder="Search sweet name across sections..."
                   value={itemSearch}
                   onChange={(e) => setItemSearch(e.target.value)}
                   className="w-full text-xs bg-transparent focus:outline-none"
@@ -817,7 +1309,7 @@ export default function WorkSheetPage() {
                 )}
               </div>
 
-              {/* Category filter */}
+              {/* Category dropdown */}
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-slate-200 bg-white">
                 <FolderTree size={13} className="text-[#348bdd] shrink-0" />
                 <select
@@ -835,21 +1327,8 @@ export default function WorkSheetPage() {
               </div>
             </div>
 
-            {/* Scope Toggle Pills */}
-            <div className="flex items-center gap-1.5">
-              {worksheetFlaggedCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setProductScope("worksheet")}
-                  className={`px-2.5 py-1.5 rounded-md text-xs border cursor-pointer transition-colors ${
-                    productScope === "worksheet"
-                      ? "border-[#348bdd] bg-blue-50 text-[#348bdd] font-medium"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  Worksheet Items ({worksheetFlaggedCount})
-                </button>
-              )}
+            {/* Scope Toggle & Quick Select Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setProductScope("all")}
@@ -861,6 +1340,7 @@ export default function WorkSheetPage() {
               >
                 All Products ({products.length})
               </button>
+
               <button
                 type="button"
                 onClick={() => setProductScope("selected")}
@@ -901,180 +1381,273 @@ export default function WorkSheetPage() {
             </div>
           </div>
 
-          {/* Items Worksheet Table */}
-          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
-            {isLoadingProducts ? (
-              <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400">
-                <Loader2 size={22} className="animate-spin text-[#348bdd]" />
-                <span className="text-xs">Loading items...</span>
+          {/* =============================================================== */}
+          {/* VIEW 1: DAILY STATEMENT SHEET VIEW (3-COLUMN PHYSICAL LAYOUT)   */}
+          {/* =============================================================== */}
+          {entryViewMode === "sheet" && (
+            <div className="border border-slate-300 rounded-xl bg-white overflow-hidden shadow-2xs">
+              {/* Sheet Header styled like physical Daily Stock Statement */}
+              <div className="bg-slate-50 border-b border-slate-300 px-5 py-3.5 flex flex-col sm:flex-row items-center justify-between text-center sm:text-left gap-3">
+                <div>
+                  <div className="text-[11px] font-mono tracking-widest text-slate-500 uppercase font-bold">
+                    DAILY STOCK STATMENT
+                  </div>
+                  <h2 className="text-lg font-bold text-slate-900 tracking-tight uppercase">
+                    {businessProfile.tradeName || "RAVI SWEETS & COOL DRINKS"}
+                  </h2>
+                  <p className="text-[11px] text-slate-500">
+                    {businessProfile.address}, {businessProfile.city}.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-300">
+                  <span className="text-xs font-mono font-bold text-slate-700">Dt.</span>
+                  <span className="text-xs font-mono font-medium text-slate-900">
+                    {formatDisplayDate(worksheetDate)}
+                  </span>
+                </div>
               </div>
-            ) : displayedProducts.length === 0 ? (
-              <div className="py-16 text-center text-slate-400 text-xs">
-                No items match the current filter.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-mono uppercase text-slate-500">
-                      <th className="py-2.5 px-4 w-10 text-center">#</th>
-                      <th className="py-2.5 px-4">Item Name</th>
-                      <th className="py-2.5 px-4">Select Unit (Tray by default)</th>
-                      <th className="py-2.5 px-4 w-36">Quantity</th>
-                      <th className="py-2.5 px-4 w-44 text-right">Calculated KG</th>
-                      <th className="py-2.5 px-3 w-12 text-center"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {displayedProducts.map((prod, idx) => {
-                      const draft = rowDrafts[prod.id] || { unit: "Tray", quantity: "1" };
-                      const qtyNum = Number(draft.quantity) || 0;
-                      const isRowActive = Boolean(draft.unit && qtyNum > 0);
-                      const isMissingUnit = Boolean(!draft.unit && qtyNum > 0);
-                      const calcKg = calculateRowKg(draft.unit, qtyNum, prod);
-                      const trayRate = prod.kgPerTray > 0 ? prod.kgPerTray : 2.5;
 
-                      return (
-                        <tr
-                          key={prod.id}
-                          className={`transition-colors ${
-                            isRowActive
-                              ? "bg-blue-50/35"
-                              : isMissingUnit
-                              ? "bg-amber-50/40"
-                              : "hover:bg-slate-50/60"
-                          }`}
-                        >
-                          {/* # */}
-                          <td className="py-2.5 px-4 text-center font-mono text-[11px] text-slate-400">
-                            {isRowActive ? (
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#348bdd] text-white">
-                                <Check size={11} />
-                              </span>
-                            ) : (
-                              idx + 1
-                            )}
-                          </td>
+              {isLoadingProducts ? (
+                <div className="py-20 flex flex-col items-center justify-center gap-2 text-slate-400">
+                  <Loader2 size={24} className="animate-spin text-[#348bdd]" />
+                  <span className="text-xs">Loading daily stock sheet...</span>
+                </div>
+              ) : (
+                /* 3 Columns Grid matching physical sheet */
+                <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-300">
+                  {/* ================= COLUMN 1 ================= */}
+                  <div className="flex flex-col">
+                    {renderSectionBlock("KAJU_ITEMS")}
+                    {renderSectionBlock("REGULAR_ITEMS")}
 
-                          {/* Item Name (Left) */}
-                          <td className="py-2.5 px-4">
-                            <div className="font-medium text-slate-900">{prod.name}</div>
-                            <div className="text-[10px] text-slate-400 font-mono flex flex-wrap items-center gap-2 mt-0.5">
-                              <span>{prod.categoryName}</span>
-                              {prod.kgPerTray > 0 && (
-                                <span className="text-slate-500">• {prod.kgPerTray} KG/Tray</span>
+                    {/* Lined extra blank space matching the photo */}
+                    <div className="p-3 bg-slate-50/40 border-t border-slate-200 flex-1 min-h-[90px]">
+                      <div className="text-[10px] font-mono uppercase text-slate-400 mb-2">
+                        Extra Custom Items
+                      </div>
+                      <div className="space-y-2">
+                        <div className="border-b border-dashed border-slate-300 h-5" />
+                        <div className="border-b border-dashed border-slate-300 h-5" />
+                        <div className="border-b border-dashed border-slate-300 h-5" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ================= COLUMN 2 ================= */}
+                  <div className="flex flex-col">
+                    {renderSectionBlock("KOVA_ITEMS")}
+                    {renderSectionBlock("SWEETS")}
+
+                    {/* Daily Note Section matching the photo's Daily Note : */}
+                    <div className="p-3.5 border-t border-slate-300 bg-slate-50/60 flex-1">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-bold uppercase tracking-wide text-slate-800">
+                          Daily Note :
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          Printed on statement
+                        </span>
+                      </div>
+                      <textarea
+                        rows={6}
+                        value={worksheetNote}
+                        onChange={(e) => setWorksheetNote(e.target.value)}
+                        placeholder="Write special orders, shift instructions, milk notes, festival planning..."
+                        className="w-full p-2.5 text-xs rounded-lg border border-slate-300 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                        style={{
+                          backgroundImage:
+                            "repeating-linear-gradient(transparent, transparent 23px, #e2e8f0 24px)",
+                          lineHeight: "24px",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* ================= COLUMN 3 ================= */}
+                  <div className="flex flex-col">
+                    {renderSectionBlock("BENGALI_ITEMS")}
+                    {renderSectionBlock("BAKLAVAS_ITEMS")}
+                    {renderSectionBlock("HOT_ITEMS")}
+                    {renderSectionBlock("OTHER_ITEMS")}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* =============================================================== */}
+          {/* VIEW 2: STANDARD TABULAR LIST VIEW                              */}
+          {/* =============================================================== */}
+          {entryViewMode === "table" && (
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
+              {isLoadingProducts ? (
+                <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400">
+                  <Loader2 size={22} className="animate-spin text-[#348bdd]" />
+                  <span className="text-xs">Loading items...</span>
+                </div>
+              ) : displayedProducts.length === 0 ? (
+                <div className="py-16 text-center text-slate-400 text-xs">
+                  No items match the current filter.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-mono uppercase text-slate-500">
+                        <th className="py-2.5 px-4 w-10 text-center">#</th>
+                        <th className="py-2.5 px-4">Item Name</th>
+                        <th className="py-2.5 px-4">Select Unit (Tray by default)</th>
+                        <th className="py-2.5 px-4 w-36">Quantity</th>
+                        <th className="py-2.5 px-4 w-44 text-right">Calculated KG</th>
+                        <th className="py-2.5 px-3 w-12 text-center"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {displayedProducts.map((prod, idx) => {
+                        const draft = rowDrafts[prod.id] || { unit: "Tray", quantity: "1" };
+                        const qtyNum = Number(draft.quantity) || 0;
+                        const isRowActive = Boolean(draft.unit && qtyNum > 0);
+                        const isMissingUnit = Boolean(!draft.unit && qtyNum > 0);
+                        const calcKg = calculateRowKg(draft.unit, qtyNum, prod);
+                        const trayRate = prod.kgPerTray > 0 ? prod.kgPerTray : 2.5;
+
+                        return (
+                          <tr
+                            key={prod.id}
+                            className={`transition-colors ${
+                              isRowActive
+                                ? "bg-blue-50/35"
+                                : isMissingUnit
+                                ? "bg-amber-50/40"
+                                : "hover:bg-slate-50/60"
+                            }`}
+                          >
+                            <td className="py-2.5 px-4 text-center font-mono text-[11px] text-slate-400">
+                              {isRowActive ? (
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#348bdd] text-white">
+                                  <Check size={11} />
+                                </span>
+                              ) : (
+                                idx + 1
                               )}
-                              {prod.piecesPerKg > 0 && (
-                                <span className="text-slate-500">• {prod.piecesPerKg} Pcs/KG</span>
-                              )}
-                            </div>
-                          </td>
+                            </td>
 
-                          {/* Units — Display all units, none selected by default */}
-                          <td className="py-2.5 px-4">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {ALL_UNITS.map((u) => {
-                                const isChosen = draft.unit === u;
-                                return (
-                                  <button
-                                    key={u}
-                                    type="button"
-                                    onClick={() => handleSelectUnit(prod.id, u)}
-                                    className={`px-2.5 py-1 rounded-md border text-[11px] font-mono transition-all cursor-pointer ${
-                                      isChosen
-                                        ? "border-[#348bdd] bg-[#348bdd] text-white font-medium shadow-2xs"
-                                        : isMissingUnit
-                                        ? "border-amber-300 bg-white text-slate-700 hover:border-[#348bdd]"
-                                        : "border-slate-200 bg-white text-slate-600 hover:border-[#348bdd] hover:text-[#348bdd]"
-                                    }`}
-                                  >
-                                    {u}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            {isMissingUnit && (
-                              <div className="text-[10px] text-amber-700 mt-1">
-                                Please select a unit
+                            <td className="py-2.5 px-4">
+                              <div className="font-medium text-slate-900">{prod.name}</div>
+                              <div className="text-[10px] text-slate-400 font-mono flex flex-wrap items-center gap-2 mt-0.5">
+                                <span>{prod.categoryName}</span>
+                                {prod.kgPerTray > 0 && (
+                                  <span className="text-slate-500">• {prod.kgPerTray} KG/Tray</span>
+                                )}
+                                {prod.piecesPerKg > 0 && (
+                                  <span className="text-slate-500">• {prod.piecesPerKg} Pcs/KG</span>
+                                )}
                               </div>
-                            )}
-                          </td>
+                            </td>
 
-                          {/* Quantity Input */}
-                          <td className="py-2.5 px-4">
-                            <input
-                              type="number"
-                              min="0"
-                              step="any"
-                              placeholder="Qty"
-                              value={draft.quantity}
-                              onWheel={(e) => e.currentTarget.blur()}
-                              onChange={(e) => handleQuantityChange(prod.id, e.target.value)}
-                              className="w-28 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
-                            />
-                          </td>
+                            <td className="py-2.5 px-4">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {ALL_UNITS.map((u) => {
+                                  const isChosen = draft.unit === u;
+                                  return (
+                                    <button
+                                      key={u}
+                                      type="button"
+                                      onClick={() => handleSelectUnit(prod.id, u)}
+                                      className={`px-2.5 py-1 rounded-md border text-[11px] font-mono transition-all cursor-pointer ${
+                                        isChosen
+                                          ? "border-[#348bdd] bg-[#348bdd] text-white font-medium shadow-2xs"
+                                          : isMissingUnit
+                                          ? "border-amber-300 bg-white text-slate-700 hover:border-[#348bdd]"
+                                          : "border-slate-200 bg-white text-slate-600 hover:border-[#348bdd] hover:text-[#348bdd]"
+                                      }`}
+                                    >
+                                      {u}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {isMissingUnit && (
+                                <div className="text-[10px] text-amber-700 mt-1">
+                                  Please select a unit
+                                </div>
+                              )}
+                            </td>
 
-                          {/* Live Calculated KG (especially for Tray) */}
-                          <td className="py-2.5 px-4 text-right font-mono">
-                            {isRowActive ? (
-                              <div className="inline-flex flex-col items-end">
-                                {draft.unit === "Tray" ? (
-                                  <>
-                                    <span className="px-2 py-0.5 rounded bg-blue-100/80 text-[#348bdd] font-medium text-xs flex items-center gap-1">
-                                      <Scale size={11} />
-                                      <span>{calcKg.toFixed(2)} KG</span>
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 mt-0.5">
-                                      {qtyNum} × {trayRate} kg/tray
-                                    </span>
-                                  </>
-                                ) : draft.unit === "KG" ? (
-                                  <span className="text-slate-900 font-medium">
-                                    {calcKg.toFixed(2)} KG
-                                  </span>
-                                ) : draft.unit === "Litre" ? (
-                                  <span className="text-slate-900 font-medium">
-                                    {qtyNum.toFixed(2)} Ltr
-                                  </span>
-                                ) : calcKg > 0 ? (
-                                  <>
+                            <td className="py-2.5 px-4">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                placeholder="Qty"
+                                value={draft.quantity}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                onChange={(e) => handleQuantityChange(prod.id, e.target.value)}
+                                className="w-28 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                              />
+                            </td>
+
+                            <td className="py-2.5 px-4 text-right font-mono">
+                              {isRowActive ? (
+                                <div className="inline-flex flex-col items-end">
+                                  {draft.unit === "Tray" ? (
+                                    <>
+                                      <span className="px-2 py-0.5 rounded bg-blue-100/80 text-[#348bdd] font-medium text-xs flex items-center gap-1">
+                                        <Scale size={11} />
+                                        <span>{calcKg.toFixed(2)} KG</span>
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 mt-0.5">
+                                        {qtyNum} × {trayRate} kg/tray
+                                      </span>
+                                    </>
+                                  ) : draft.unit === "KG" ? (
                                     <span className="text-slate-900 font-medium">
                                       {calcKg.toFixed(2)} KG
                                     </span>
-                                    <span className="text-[10px] text-slate-400 mt-0.5">
-                                      {qtyNum} pcs ÷ {prod.piecesPerKg}/kg
+                                  ) : draft.unit === "Litre" ? (
+                                    <span className="text-slate-900 font-medium">
+                                      {qtyNum.toFixed(2)} Ltr
                                     </span>
-                                  </>
-                                ) : (
-                                  <span className="text-slate-700">{qtyNum} pcs</span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </td>
+                                  ) : calcKg > 0 ? (
+                                    <>
+                                      <span className="text-slate-900 font-medium">
+                                        {calcKg.toFixed(2)} KG
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 mt-0.5">
+                                        {qtyNum} pcs ÷ {prod.piecesPerKg}/kg
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-700">{qtyNum} pcs</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
 
-                          {/* Clear Row */}
-                          <td className="py-2.5 px-3 text-center">
-                            {(draft.unit || draft.quantity) && (
-                              <button
-                                type="button"
-                                onClick={() => handleClearRow(prod.id)}
-                                title="Clear item"
-                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                              >
-                                <X size={13} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                            <td className="py-2.5 px-3 text-center">
+                              {(draft.unit || draft.quantity) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleClearRow(prod.id)}
+                                  title="Clear item"
+                                  className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                >
+                                  <X size={13} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1166,7 +1739,7 @@ export default function WorkSheetPage() {
                 </div>
                 <p className="text-xs font-medium text-slate-700">No work sheets found</p>
                 <p className="text-[11px] text-slate-400">
-                  Create a new work sheet to track production items and print Thermal or A4 sheets.
+                  Create a new work sheet to track production items and print Daily Statement or Thermal receipts.
                 </p>
               </div>
             ) : (
@@ -1238,22 +1811,22 @@ export default function WorkSheetPage() {
 
                             <button
                               type="button"
-                              onClick={() => handleThermalPrint(ws)}
-                              title="Thermal Print (Selected Items Only)"
-                              className="px-2.5 py-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer"
+                              onClick={() => handlePrintDailyStatement(ws, false)}
+                              title="Print Daily Stock Statement (3-Column Layout)"
+                              className="px-2.5 py-1.5 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#348bdd] text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer"
                             >
-                              <Printer size={12} />
-                              <span>Thermal</span>
+                              <FileText size={12} />
+                              <span>Statement</span>
                             </button>
 
                             <button
                               type="button"
-                              onClick={() => handleA4Print(ws)}
-                              title="A4 Print (Selected Items Only)"
-                              className="px-2.5 py-1.5 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#348bdd] text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer"
+                              onClick={() => handleThermalPrint(ws)}
+                              title="Thermal Print"
+                              className="px-2.5 py-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer"
                             >
-                              <FileText size={12} />
-                              <span>A4 Print</span>
+                              <Printer size={12} />
+                              <span>Thermal</span>
                             </button>
 
                             <button
@@ -1348,7 +1921,7 @@ export default function WorkSheetPage() {
 
               <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs font-mono">
                 <span className="text-slate-600">
-                  Total Selected Items: <strong>{viewingWorksheet.items?.length || 0}</strong>
+                  Total Items: <strong>{viewingWorksheet.items?.length || 0}</strong>
                 </span>
                 <span className="text-[#348bdd] font-medium">
                   Total KG: {Number(viewingWorksheet.totalCalculatedKg || 0).toFixed(2)} KG
@@ -1360,20 +1933,20 @@ export default function WorkSheetPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => handlePrintDailyStatement(viewingWorksheet, false)}
+                  className="px-3 py-1.5 rounded-lg text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer"
+                  style={{ backgroundColor: "var(--color-brand-primary)" }}
+                >
+                  <FileText size={13} />
+                  <span>Print Statement</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleThermalPrint(viewingWorksheet)}
                   className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium flex items-center gap-1.5 cursor-pointer"
                 >
                   <Printer size={13} />
                   <span>Thermal Print</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleA4Print(viewingWorksheet)}
-                  className="px-3 py-1.5 rounded-lg text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer"
-                  style={{ backgroundColor: "var(--color-brand-primary)" }}
-                >
-                  <FileText size={13} />
-                  <span>A4 Print</span>
                 </button>
               </div>
               <button
@@ -1389,10 +1962,9 @@ export default function WorkSheetPage() {
       )}
 
       {/* =================================================================== */}
-      {/* DEDICATED A4 PRINTABLE WORK SHEET (BUSINESS DETAILS -> DATE -> ONLY */}
-      {/* SELECTED ITEMS, ZERO BROWSER HEADERS/FOOTERS)                       */}
+      {/* 3-COLUMN DAILY STOCK STATEMENT A4 PRINT LAYOUT (EXACT REPLICA)      */}
       {/* =================================================================== */}
-      {printingA4Worksheet && (
+      {printingDailyStatement && (
         <>
           <style
             dangerouslySetInnerHTML={{
@@ -1400,7 +1972,7 @@ export default function WorkSheetPage() {
                 @media print {
                   @page {
                     size: A4 portrait;
-                    margin: 0 !important;
+                    margin: 6mm 8mm !important;
                   }
                   html, body {
                     margin: 0 !important;
@@ -1412,11 +1984,11 @@ export default function WorkSheetPage() {
                   body * {
                     visibility: hidden !important;
                   }
-                  #printable-worksheet-a4,
-                  #printable-worksheet-a4 * {
+                  #printable-daily-stock-statement,
+                  #printable-daily-stock-statement * {
                     visibility: visible !important;
                   }
-                  #printable-worksheet-a4 {
+                  #printable-daily-stock-statement {
                     display: block !important;
                     position: absolute !important;
                     left: 0 !important;
@@ -1424,139 +1996,296 @@ export default function WorkSheetPage() {
                     width: 100% !important;
                     max-width: 100% !important;
                     margin: 0 !important;
-                    padding: 12mm 15mm !important;
+                    padding: 0 !important;
                     box-sizing: border-box !important;
                     background: #ffffff !important;
+                    font-family: Arial, sans-serif !important;
+                    color: #000000 !important;
                   }
                 }
               `,
             }}
           />
-          <div id="printable-worksheet-a4" className="hidden print:block bg-white text-slate-900">
-            {/* Business Details Header */}
-            <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                <img
-                  src="/logo.png"
-                  alt="Logo"
-                  className="w-14 h-14 object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = "none";
-                  }}
-                />
-                <div>
-                  <h1 className="text-xl font-bold uppercase tracking-tight text-slate-900">
-                    {businessProfile.tradeName || "Ravi Sweets & Cold Drinks"}
-                  </h1>
-                  <p className="text-xs text-slate-600">
-                    {[
-                      businessProfile.address,
-                      businessProfile.city,
-                      businessProfile.state,
-                      businessProfile.pincode,
-                    ]
-                      .filter(Boolean)
-                      .join(", ")}
-                  </p>
-                  <p className="text-xs text-slate-600 font-mono">
-                    {businessProfile.phone && `Phone: ${businessProfile.phone}`}
-                    {businessProfile.email && ` | Email: ${businessProfile.email}`}
-                  </p>
-                  {businessProfile.gstNumber && (
-                    <p className="text-xs font-mono font-semibold text-slate-800">
-                      GSTIN: {businessProfile.gstNumber}
-                    </p>
-                  )}
+          <div
+            id="printable-daily-stock-statement"
+            className="hidden print:block bg-white text-black text-[11px]"
+          >
+            <div className="border border-black p-2">
+              {/* Top Title Banner */}
+              <div className="text-center pb-2 mb-2 border-b border-black relative">
+                <div className="text-xs font-bold tracking-widest uppercase">
+                  DAILY STOCK STATMENT
+                </div>
+                <h1 className="text-xl font-black uppercase tracking-tight leading-tight">
+                  {businessProfile.tradeName || "RAVI SWEETS & COOL DRINKS"}
+                </h1>
+                <p className="text-[11px] font-semibold">
+                  {businessProfile.address}, {businessProfile.city}.
+                </p>
+                <div className="absolute right-1 top-2 text-xs font-bold font-mono">
+                  Dt. {printingDailyStatement.isBlank ? "...................." : formatDisplayDate(printingDailyStatement.date)}
                 </div>
               </div>
 
-              <div className="text-right shrink-0">
-                <div className="inline-block px-3 py-1 bg-slate-900 text-white text-xs font-bold uppercase tracking-wider rounded-xs">
-                  WORK SHEET
-                </div>
-                <div className="text-xs font-mono mt-2 space-y-0.5">
+              {/* 3 Columns Boxed Grid */}
+              <div className="grid grid-cols-3 border border-black divide-x divide-black">
+                {/* ================= PRINT COLUMN 1 ================= */}
+                <div className="divide-y divide-black flex flex-col justify-between">
                   <div>
-                    <span className="text-slate-500">Ref #: </span>
-                    <strong>{printingA4Worksheet.worksheetNumber}</strong>
+                    {/* KAJU ITEMS */}
+                    <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-b border-black">
+                      KAJU ITEMS
+                    </div>
+                    <div>
+                      {(allSectionedProducts.KAJU_ITEMS || []).map((item) => {
+                        const saved = printingDailyStatement.items.find(
+                          (i) => i.productId === item.id
+                        );
+                        return (
+                          <div
+                            key={item.id}
+                            className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                          >
+                            <span className="font-semibold">{item.name}</span>
+                            <span className="font-mono font-bold">
+                              {printingDailyStatement.isBlank
+                                ? ""
+                                : saved
+                                ? `${saved.quantity} ${saved.unit}`
+                                : ""}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* REGULAR ITEMS */}
+                    <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
+                      REGULAR ITEMS
+                    </div>
+                    <div>
+                      {(allSectionedProducts.REGULAR_ITEMS || []).map((item) => {
+                        const saved = printingDailyStatement.items.find(
+                          (i) => i.productId === item.id
+                        );
+                        return (
+                          <div
+                            key={item.id}
+                            className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                          >
+                            <span className="font-semibold">{item.name}</span>
+                            <span className="font-mono font-bold">
+                              {printingDailyStatement.isBlank
+                                ? ""
+                                : saved
+                                ? `${saved.quantity} ${saved.unit}`
+                                : ""}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Blank lined area at bottom of Column 1 */}
+                  <div className="p-2 border-t border-black min-h-[90px] space-y-3">
+                    <div className="border-b border-black border-dashed h-3" />
+                    <div className="border-b border-black border-dashed h-3" />
+                    <div className="border-b border-black border-dashed h-3" />
+                    <div className="border-b border-black border-dashed h-3" />
                   </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Date Bar Below Business Details */}
-            <div className="my-4 p-3 rounded border border-slate-300 bg-slate-50 flex items-center justify-between text-xs font-mono">
-              <div>
-                <span className="text-slate-500 uppercase">Date: </span>
-                <strong className="text-sm text-slate-900">
-                  {formatDisplayDate(printingA4Worksheet.date)}
-                </strong>
-              </div>
-              {printingA4Worksheet.note && (
-                <div>
-                  <span className="text-slate-500 uppercase">Note: </span>
-                  <strong className="text-slate-900">{printingA4Worksheet.note}</strong>
+                {/* ================= PRINT COLUMN 2 ================= */}
+                <div className="divide-y divide-black flex flex-col justify-between">
+                  <div>
+                    {/* KOVA ITEMS */}
+                    <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-b border-black">
+                      KOVA ITEMS
+                    </div>
+                    <div>
+                      {(allSectionedProducts.KOVA_ITEMS || []).map((item) => {
+                        const saved = printingDailyStatement.items.find(
+                          (i) => i.productId === item.id
+                        );
+                        return (
+                          <div
+                            key={item.id}
+                            className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                          >
+                            <span className="font-semibold">{item.name}</span>
+                            <span className="font-mono font-bold">
+                              {printingDailyStatement.isBlank
+                                ? ""
+                                : saved
+                                ? `${saved.quantity} ${saved.unit}`
+                                : ""}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* SWEETS */}
+                    <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
+                      SWEETS
+                    </div>
+                    <div>
+                      {(allSectionedProducts.SWEETS || []).map((item) => {
+                        const saved = printingDailyStatement.items.find(
+                          (i) => i.productId === item.id
+                        );
+                        return (
+                          <div
+                            key={item.id}
+                            className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                          >
+                            <span className="font-semibold">{item.name}</span>
+                            <span className="font-mono font-bold">
+                              {printingDailyStatement.isBlank
+                                ? ""
+                                : saved
+                                ? `${saved.quantity} ${saved.unit}`
+                                : ""}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Daily Note Area */}
+                  <div className="p-2 border-t border-black min-h-[140px]">
+                    <div className="font-black uppercase text-[11px] mb-1">Daily Note :</div>
+                    {printingDailyStatement.note && !printingDailyStatement.isBlank ? (
+                      <div className="text-[10px] font-mono whitespace-pre-wrap leading-relaxed">
+                        {printingDailyStatement.note}
+                      </div>
+                    ) : (
+                      <div className="space-y-4 pt-1">
+                        <div className="border-b border-black border-dashed h-4" />
+                        <div className="border-b border-black border-dashed h-4" />
+                        <div className="border-b border-black border-dashed h-4" />
+                        <div className="border-b border-black border-dashed h-4" />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-              <div>
-                <span className="text-slate-500 uppercase">Items: </span>
-                <strong className="text-slate-900">{printingA4Worksheet.items?.length || 0}</strong>
-              </div>
-            </div>
 
-            {/* ONLY Selected Items Table */}
-            <table className="w-full text-left text-xs border-collapse border border-slate-300">
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-300 font-mono uppercase text-[10px] text-slate-800">
-                  <th className="py-2.5 px-3 border-r border-slate-300 w-10 text-center">#</th>
-                  <th className="py-2.5 px-3 border-r border-slate-300">Item Name</th>
-                  <th className="py-2.5 px-3 border-r border-slate-300 w-24 text-center">Unit</th>
-                  <th className="py-2.5 px-3 border-r border-slate-300 w-28 text-right">Quantity</th>
-                  <th className="py-2.5 px-3 w-32 text-right">Calculated KG</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(printingA4Worksheet.items || []).map((item, idx) => (
-                  <tr key={idx} className="border-b border-slate-200">
-                    <td className="py-2.5 px-3 border-r border-slate-200 text-center font-mono">
-                      {idx + 1}
-                    </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-medium text-slate-900">
-                      {item.productName}
-                    </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 text-center font-mono">
-                      {item.unit}
-                    </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 text-right font-mono font-semibold">
-                      {item.quantity} {item.unit}
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
-                      {item.calculatedKg > 0 ? `${Number(item.calculatedKg).toFixed(2)} KG` : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-slate-50 border-t-2 border-slate-900 font-mono font-bold text-xs">
-                  <td colSpan={3} className="py-2.5 px-3 border-r border-slate-300">
-                    Total Selected Items: {printingA4Worksheet.items?.length || 0}
-                  </td>
-                  <td className="py-2.5 px-3 border-r border-slate-300 text-right">
-                    Total Weight:
-                  </td>
-                  <td className="py-2.5 px-3 text-right">
-                    {Number(printingA4Worksheet.totalCalculatedKg || 0).toFixed(2)} KG
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                {/* ================= PRINT COLUMN 3 ================= */}
+                <div className="divide-y divide-black">
+                  {/* BENGALI ITEMS */}
+                  <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-b border-black">
+                    BENGALI ITEMS
+                  </div>
+                  <div>
+                    {(allSectionedProducts.BENGALI_ITEMS || []).map((item) => {
+                      const saved = printingDailyStatement.items.find(
+                        (i) => i.productId === item.id
+                      );
+                      return (
+                        <div
+                          key={item.id}
+                          className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                        >
+                          <span className="font-semibold">{item.name}</span>
+                          <span className="font-mono font-bold">
+                            {printingDailyStatement.isBlank
+                              ? ""
+                              : saved
+                              ? `${saved.quantity} ${saved.unit}`
+                              : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
 
-            {/* Signature Footer */}
-            <div className="pt-14 flex items-end justify-between text-xs text-slate-700">
-              <div className="text-center w-44">
-                <div className="border-t border-slate-400 pt-1">Prepared By</div>
-              </div>
-              <div className="text-center w-44">
-                <div className="border-t border-slate-400 pt-1">Verified By</div>
+                  {/* BAKLAVA'S ITEMS */}
+                  <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
+                    BAKLAVA&apos;S ITEMS
+                  </div>
+                  <div>
+                    {(allSectionedProducts.BAKLAVAS_ITEMS || []).map((item) => {
+                      const saved = printingDailyStatement.items.find(
+                        (i) => i.productId === item.id
+                      );
+                      return (
+                        <div
+                          key={item.id}
+                          className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                        >
+                          <span className="font-semibold">{item.name}</span>
+                          <span className="font-mono font-bold">
+                            {printingDailyStatement.isBlank
+                              ? ""
+                              : saved
+                              ? `${saved.quantity} ${saved.unit}`
+                              : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* HOT ITEMS */}
+                  <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
+                    HOT ITEMS
+                  </div>
+                  <div>
+                    {(allSectionedProducts.HOT_ITEMS || []).map((item) => {
+                      const saved = printingDailyStatement.items.find(
+                        (i) => i.productId === item.id
+                      );
+                      return (
+                        <div
+                          key={item.id}
+                          className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                        >
+                          <span className="font-semibold">{item.name}</span>
+                          <span className="font-mono font-bold">
+                            {printingDailyStatement.isBlank
+                              ? ""
+                              : saved
+                              ? `${saved.quantity} ${saved.unit}`
+                              : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* OTHER ITEMS (if any) */}
+                  {(allSectionedProducts.OTHER_ITEMS || []).length > 0 && (
+                    <>
+                      <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
+                        OTHER ITEMS
+                      </div>
+                      <div>
+                        {allSectionedProducts.OTHER_ITEMS.map((item) => {
+                          const saved = printingDailyStatement.items.find(
+                            (i) => i.productId === item.id
+                          );
+                          return (
+                            <div
+                              key={item.id}
+                              className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                            >
+                              <span className="font-semibold">{item.name}</span>
+                              <span className="font-mono font-bold">
+                                {printingDailyStatement.isBlank
+                                  ? ""
+                                  : saved
+                                  ? `${saved.quantity} ${saved.unit}`
+                                  : ""}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1582,4 +2311,3 @@ export default function WorkSheetPage() {
     </div>
   );
 }
-
