@@ -33,6 +33,7 @@ import {
   UtensilsCrossed,
   ChevronDown,
   Warehouse,
+  Scan,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -131,6 +132,13 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     href: "/warehouse-entry",
     aliases: ["/warehouse", "/warehouse-entries"],
     icon: Warehouse,
+    category: "Inventory & Operations",
+  },
+  {
+    name: "Scan Product",
+    href: "/scan-product",
+    aliases: ["/scan", "/visual-search"],
+    icon: Scan,
     category: "Inventory & Operations",
   },
   {
