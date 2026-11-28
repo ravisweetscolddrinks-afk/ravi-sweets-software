@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
+import CustomDatePicker from "@/components/CustomDatePicker";
 import {
   ArrowDownToLine,
   Store,
@@ -34,6 +35,8 @@ import {
   Pencil,
   LayoutGrid,
   List,
+  SlidersHorizontal,
+  Check,
 } from "lucide-react";
 
 interface StoreOption {
@@ -86,6 +89,7 @@ export default function StoreStockEntryPage() {
 
   // Adjustment Modal State
   const [adjustingProduct, setAdjustingProduct] = useState<ProductItem | null>(null);
+  const [adjustDate, setAdjustDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [adjustType, setAdjustType] = useState<"inward" | "set" | "spoilage">("inward");
   const [adjustQuantity, setAdjustQuantity] = useState<number | string>("");
   const [adjustNote, setAdjustNote] = useState<string>("");
@@ -496,11 +500,12 @@ export default function StoreStockEntryPage() {
   };
 
   // Open adjustment modal
-  const handleOpenAdjustment = (product: ProductItem, defaultType: "inward" | "set" = "inward") => {
+  const handleOpenAdjustment = (product: ProductItem, defaultType: "inward" | "set" | "spoilage" = "inward") => {
     setAdjustingProduct(product);
-    setAdjustType(defaultType);
+    setAdjustDate(new Date().toISOString().split("T")[0]);
+    setAdjustType(defaultType === "set" ? "set" : defaultType === "spoilage" ? "spoilage" : "inward");
     setAdjustQuantity("");
-    setAdjustNote(defaultType === "inward" ? "Kitchen Sweet Inward Transfer" : "Store Counter Count Adjustment");
+    setAdjustNote("");
   };
 
   // Submit Stock Inward / Adjustment to Firestore
@@ -509,8 +514,8 @@ export default function StoreStockEntryPage() {
     if (!adjustingProduct || !selectedStoreId) return;
 
     const numQty = Number(adjustQuantity);
-    if (isNaN(numQty) || numQty < 0) {
-      showToast("Please enter a valid quantity", "error");
+    if (isNaN(numQty) || numQty <= 0) {
+      showToast("Please enter a valid quantity greater than 0", "error");
       return;
     }
 
@@ -542,8 +547,11 @@ export default function StoreStockEntryPage() {
           quantity: newQty,
           calculatedKg: newCalculatedKg,
           unit: adjustingProduct.unit,
+          lastDate: adjustDate,
           lastUpdated: serverTimestamp(),
-          lastNote: adjustNote.trim() || `${adjustType} of ${numQty} ${adjustingProduct.unit}`,
+          lastNote:
+            adjustNote.trim() ||
+            `${adjustType === "inward" ? "+ Inward" : adjustType === "spoilage" ? "- Spoilage" : "= Count"} of ${numQty} ${adjustingProduct.unit} on ${adjustDate}`,
         },
         { merge: true }
       );
@@ -800,22 +808,19 @@ export default function StoreStockEntryPage() {
           </p>
         </div>
       ) : viewMode === "card" ? (
-        /* CARD UI GRID (Default) */
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        /* CARD UI GRID (Simplified: Image, Name, Adjust Button) */
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
           {stockRows.map(({ product, currentQty, calculatedKg }, idx) => {
             const isOutOfStock = currentQty <= 0;
             const isLowStock = !isOutOfStock && calculatedKg < 5;
-            const rowInput = getRowInput(product);
-            const enteredNum = Number(rowInput.quantity) || 0;
-            const enteredKg = convertInputToKg(product, enteredNum, rowInput.unit);
 
             return (
               <div
                 key={`${product.id}_${idx}`}
                 className="bg-white rounded-2xl border border-slate-200 hover:border-[#348bdd]/50 hover:shadow-md transition-all duration-200 flex flex-col justify-between overflow-hidden group shadow-2xs"
               >
-                {/* 1. Product Image & Floating Badges */}
-                <div className="relative aspect-4/3 w-full bg-slate-100 overflow-hidden">
+                {/* 1. Product Image & Stock Badge */}
+                <div className="relative aspect-square w-full bg-slate-100 overflow-hidden">
                   {product.imageUrl ? (
                     <img
                       src={product.imageUrl}
@@ -826,201 +831,48 @@ export default function StoreStockEntryPage() {
                       }}
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 text-slate-300">
+                    <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-300">
                       <Boxes size={34} />
                     </div>
                   )}
 
-                  {/* Gradient overlay for badge readability */}
-                  <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/45 to-transparent pointer-events-none" />
-
-                  {/* Category Tag */}
-                  {product.categoryName && (
-                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/60 text-white backdrop-blur-xs font-mono shadow-xs">
-                      {product.categoryName}
-                    </span>
-                  )}
-
                   {/* Stock Status Badge */}
                   <span
-                    className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs ${
+                    className={`absolute bottom-2 right-2 px-2 py-0.5 rounded-md font-mono text-[10px] font-bold shadow-xs backdrop-blur-xs ${
                       isOutOfStock
-                        ? "bg-rose-500 text-white"
+                        ? "bg-rose-500/90 text-white"
                         : isLowStock
-                        ? "bg-amber-500 text-white"
-                        : "bg-emerald-600 text-white"
+                        ? "bg-amber-500/90 text-white"
+                        : "bg-black/65 text-white"
                     }`}
                   >
-                    {isOutOfStock ? "Out of Stock" : isLowStock ? "Low Stock" : "In Stock"}
+                    {currentQty} {product.unit}
                   </span>
                 </div>
 
-                {/* 2. Card Body */}
-                <div className="p-3.5 flex-1 flex flex-col justify-between space-y-3">
-                  {/* Name and Price */}
+                {/* 2. Product Name & Adjust Button */}
+                <div className="p-3 flex flex-col justify-between flex-1 space-y-2.5 bg-white">
                   <div>
                     <h3
-                      className="font-bold text-sm text-slate-900 group-hover:text-[#348bdd] transition-colors line-clamp-1"
+                      className="font-bold text-xs sm:text-sm text-slate-900 group-hover:text-[#348bdd] transition-colors line-clamp-2 leading-tight"
                       title={product.name}
                     >
                       {product.name}
                     </h3>
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono mt-1">
-                      <span>₹{product.amount} / {product.unit}</span>
-                      {product.unit.toLowerCase() === "piece" && product.piecesPerKg ? (
-                        <span className="text-blue-600 font-medium">{product.piecesPerKg} pcs/KG</span>
-                      ) : product.unit.toLowerCase() === "tray" ? (
-                        <span className="text-purple-600 font-medium">{product.kgPerTray || 2.5} KG/tray</span>
-                      ) : null}
-                    </div>
+                    <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
+                      {product.categoryName || "General"}
+                    </p>
                   </div>
 
-                  {/* Current Available Stock Box */}
-                  <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-100 text-xs">
-                    <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
-                      <Scale size={12} className="text-[#348bdd]" />
-                      In Store:
-                    </span>
-                    <div className="text-right">
-                      <span
-                        className={`font-mono font-bold text-xs ${
-                          isOutOfStock ? "text-rose-600" : isLowStock ? "text-amber-600" : "text-emerald-700"
-                        }`}
-                      >
-                        {currentQty} {product.unit}
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-400 ml-1">
-                        (~{calculatedKg.toFixed(2)} KG)
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Stock Entry Section */}
-                  <div className="space-y-2 pt-1 border-t border-slate-100">
-                    {/* Mode Toggle & Unit Selection */}
-                    <div className="flex items-center justify-between gap-1.5">
-                      <div className="inline-flex rounded-lg p-0.5 bg-slate-100 border border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => handleRowInputChange(product.id, "mode", "inward", product.unit)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors cursor-pointer ${
-                            rowInput.mode === "inward"
-                              ? "bg-emerald-600 text-white shadow-2xs"
-                              : "text-slate-600 hover:text-slate-900"
-                          }`}
-                          title="Mode: + Inward (Adds to current stock)"
-                        >
-                          + Inward
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRowInputChange(product.id, "mode", "set", product.unit)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors cursor-pointer ${
-                            rowInput.mode === "set"
-                              ? "bg-purple-600 text-white shadow-2xs"
-                              : "text-slate-600 hover:text-slate-900"
-                          }`}
-                          title="Mode: = Set (Overrides stock count)"
-                        >
-                          = Set
-                        </button>
-                      </div>
-
-                      <select
-                        value={rowInput.unit}
-                        onChange={(e) => handleRowInputChange(product.id, "unit", e.target.value, "Tray")}
-                        className="px-2 py-1 text-[11px] font-medium border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#348bdd] cursor-pointer shadow-2xs"
-                      >
-                        <option value="Tray">Tray</option>
-                        <option value="KG">KG</option>
-                        <option value="piece">piece</option>
-                        <option value="litre">litre</option>
-                      </select>
-                    </div>
-
-                    {/* Stepper with Minus, Input, Plus, and Pencil */}
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const current = Math.max(0, (Number(rowInput.quantity) || 0) - 1);
-                          handleRowInputChange(product.id, "quantity", String(current), product.unit);
-                        }}
-                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center transition-all cursor-pointer font-bold shrink-0"
-                        title="Decrease quantity (-1)"
-                      >
-                        <Minus size={13} />
-                      </button>
-
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        placeholder="0"
-                        value={rowInput.quantity}
-                        onWheel={(e) => (e.target as HTMLElement).blur()}
-                        onChange={(e) => handleRowInputChange(product.id, "quantity", e.target.value, product.unit)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSaveRowStock(product);
-                          }
-                        }}
-                        className="flex-1 min-w-0 h-8 text-center text-xs font-mono font-bold border border-slate-200 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#348bdd] shadow-2xs"
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const current = (Number(rowInput.quantity) || 0) + 1;
-                          handleRowInputChange(product.id, "quantity", String(current), product.unit);
-                        }}
-                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center transition-all cursor-pointer font-bold shrink-0"
-                        title="Increase quantity (+1)"
-                      >
-                        <Plus size={13} />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleOpenAdjustment(product, "set")}
-                        className="w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-100 active:scale-95 text-slate-500 flex items-center justify-center transition-all cursor-pointer shrink-0 shadow-2xs"
-                        title="Record detailed adjustment / notes / spoilage"
-                      >
-                        <Pencil size={12} />
-                      </button>
-                    </div>
-
-                    {/* Inflow Preview & Add Stock Button */}
-                    <div className="flex items-center gap-2 pt-1">
-                      {enteredKg > 0 ? (
-                        <span className="text-[10px] font-mono font-semibold text-[#348bdd] bg-blue-50/80 px-2 py-1 rounded-md border border-blue-200 truncate flex-1 shadow-2xs">
-                          ~{enteredKg.toFixed(2)} KG
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-mono text-slate-400 flex-1 truncate">
-                          Enter qty
-                        </span>
-                      )}
-
-                      <button
-                        type="button"
-                        disabled={!rowInput.quantity || Number(rowInput.quantity) <= 0 || savingId === product.id}
-                        onClick={() => handleSaveRowStock(product)}
-                        className="px-3 h-8 rounded-lg text-white font-medium text-xs flex items-center gap-1.5 transition-all shadow-2xs hover:brightness-105 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
-                        style={{ backgroundColor: "var(--color-brand-primary)" }}
-                      >
-                        {savingId === product.id ? (
-                          <Loader2 size={13} className="animate-spin" />
-                        ) : (
-                          <>
-                            <CheckCircle2 size={13} />
-                            <span>{rowInput.mode === "inward" ? "Add Stock" : "Set Count"}</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                  {/* Adjust Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAdjustment(product)}
+                    className="w-full py-2 px-3 rounded-xl bg-[#348bdd] hover:bg-[#2b7bc4] active:scale-[0.98] text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                  >
+                    <SlidersHorizontal size={13} className="stroke-[2.5]" />
+                    <span>Adjust Stock</span>
+                  </button>
                 </div>
               </div>
             );
@@ -1325,7 +1177,7 @@ export default function StoreStockEntryPage() {
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSubmitAdjustment} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleSubmitAdjustment} className="p-5 space-y-4 text-xs">
               {/* Product Info Banner */}
               <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
                 <div>
@@ -1346,63 +1198,74 @@ export default function StoreStockEntryPage() {
                 </div>
               </div>
 
-              {/* Adjustment Mode Selector */}
+              {/* 1. Date Selector */}
               <div>
-                <label className="block text-[11px] font-mono font-medium text-slate-500 uppercase tracking-wide mb-1.5">
-                  Entry Type
+                <label className="block text-[11px] font-mono font-medium text-slate-700 uppercase tracking-wide mb-1">
+                  Adjustment Date
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <CustomDatePicker
+                  value={adjustDate}
+                  onChange={(d) => setAdjustDate(d)}
+                  placeholder="Select Date"
+                />
+              </div>
+
+              {/* 2. Increase / Decrease Type Selector ("can increase and decrease feature both") */}
+              <div>
+                <label className="block text-[11px] font-mono font-medium text-slate-700 uppercase tracking-wide mb-1.5">
+                  Adjustment Action
+                </label>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => {
                       setAdjustType("inward");
                       setAdjustNote("Kitchen Sweet Inward Transfer");
                     }}
-                    className={`p-2 rounded-lg border text-center font-medium transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl font-bold text-xs border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                       adjustType === "inward"
-                        ? "border-[#348bdd] bg-blue-50 text-[#348bdd] ring-1 ring-[#348bdd]"
-                        : "border-slate-200 text-slate-600 hover:border-slate-300"
+                        ? "bg-emerald-50 border-emerald-400 text-emerald-800 shadow-2xs ring-1 ring-emerald-300"
+                        : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
                     }`}
                   >
-                    + Inward
+                    <Plus size={15} className="text-emerald-600 stroke-[2.5]" />
+                    <span>Increase Stock (+)</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAdjustType("set");
-                      setAdjustNote("Physical Stock Count Verification");
-                    }}
-                    className={`p-2 rounded-lg border text-center font-medium transition-all cursor-pointer ${
-                      adjustType === "set"
-                        ? "border-[#348bdd] bg-blue-50 text-[#348bdd] ring-1 ring-[#348bdd]"
-                        : "border-slate-200 text-slate-600 hover:border-slate-300"
-                    }`}
-                  >
-                    = Set Exact
-                  </button>
+
                   <button
                     type="button"
                     onClick={() => {
                       setAdjustType("spoilage");
                       setAdjustNote("Spoilage / Expired / Damaged Sweet Discard");
                     }}
-                    className={`p-2 rounded-lg border text-center font-medium transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl font-bold text-xs border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                       adjustType === "spoilage"
-                        ? "border-rose-300 bg-rose-50 text-rose-700 ring-1 ring-rose-400"
-                        : "border-slate-200 text-slate-600 hover:border-slate-300"
+                        ? "bg-rose-50 border-rose-400 text-rose-800 shadow-2xs ring-1 ring-rose-300"
+                        : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
                     }`}
                   >
-                    - Spoilage
+                    <Minus size={15} className="text-rose-600 stroke-[2.5]" />
+                    <span>Decrease Stock (-)</span>
                   </button>
                 </div>
               </div>
 
-              {/* Quantity Input in Product Unit */}
+              {/* 3. Minus - Input - Plus Quantity Controls ("then plus input then plus then save") */}
               <div>
                 <label className="block text-[11px] font-mono font-medium text-slate-700 uppercase tracking-wide mb-1">
                   Quantity ({adjustingProduct.unit}) *
                 </label>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAdjustQuantity((prev) => Math.max(0, (Number(prev) || 0) - 1))
+                    }
+                    className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center transition-all cursor-pointer font-bold shrink-0"
+                  >
+                    <Minus size={16} />
+                  </button>
+
                   <input
                     type="number"
                     step="any"
@@ -1412,20 +1275,75 @@ export default function StoreStockEntryPage() {
                     onChange={(e) => setAdjustQuantity(e.target.value)}
                     required
                     autoFocus
-                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-slate-900 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                    className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-slate-900 font-mono text-base font-bold text-center focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
                   />
-                  <span className="px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 font-mono font-medium text-slate-600">
-                    {adjustingProduct.unit}
-                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAdjustQuantity((prev) => (Number(prev) || 0) + 1)
+                    }
+                    className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center transition-all cursor-pointer font-bold shrink-0"
+                  >
+                    <Plus size={16} />
+                  </button>
                 </div>
 
-                {/* Live KG preview */}
+                {/* Quick Step Buttons */}
+                <div className="flex items-center gap-1.5 mt-2 justify-center">
+                  {[1, 2, 5, 10, 20].map((step) => (
+                    <button
+                      key={step}
+                      type="button"
+                      onClick={() =>
+                        setAdjustQuantity((prev) => (Number(prev) || 0) + step)
+                      }
+                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-mono font-bold cursor-pointer transition-colors"
+                    >
+                      +{step}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setAdjustQuantity("")}
+                    className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-400 text-[10px] font-mono cursor-pointer transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                {/* Resulting stock preview */}
                 {adjustQuantity !== "" && Number(adjustQuantity) > 0 && (
-                  <div className="mt-1.5 flex items-center justify-between text-[11px] text-[#348bdd] font-mono bg-blue-50/60 p-2 rounded-lg border border-blue-100">
-                    <span>Equivalent Weight:</span>
-                    <span className="font-bold">
-                      ~{calculateKg(adjustingProduct, Number(adjustQuantity))} KG
-                    </span>
+                  <div className="mt-2.5 p-3 rounded-xl border border-dashed border-[#348bdd]/30 bg-blue-50/50 flex items-center justify-between text-xs">
+                    <span className="text-slate-600 font-medium">New Store Stock:</span>
+                    <div className="text-right">
+                      <span className="font-mono font-bold text-sm text-[#348bdd]">
+                        {adjustType === "inward"
+                          ? (inventoryMap.get(`${selectedStoreId}_${adjustingProduct.id}`)?.quantity || 0) +
+                            Number(adjustQuantity)
+                          : Math.max(
+                              0,
+                              (inventoryMap.get(`${selectedStoreId}_${adjustingProduct.id}`)?.quantity || 0) -
+                                Number(adjustQuantity)
+                            )}{" "}
+                        {adjustingProduct.unit}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono ml-1.5">
+                        (~
+                        {calculateKg(
+                          adjustingProduct,
+                          adjustType === "inward"
+                            ? (inventoryMap.get(`${selectedStoreId}_${adjustingProduct.id}`)?.quantity || 0) +
+                                Number(adjustQuantity)
+                            : Math.max(
+                                0,
+                                (inventoryMap.get(`${selectedStoreId}_${adjustingProduct.id}`)?.quantity || 0) -
+                                  Number(adjustQuantity)
+                              )
+                        )}{" "}
+                        KG)
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1433,11 +1351,11 @@ export default function StoreStockEntryPage() {
               {/* Entry Reason / Note */}
               <div>
                 <label className="block text-[11px] font-mono font-medium text-slate-700 uppercase tracking-wide mb-1">
-                  Batch / Transfer Note
+                  Batch / Transfer Note (Optional)
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Inward from Bengali Sweets Kitchen #1"
+                  placeholder="e.g. Counter morning stock refill, wastage, audit"
                   value={adjustNote}
                   onChange={(e) => setAdjustNote(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
@@ -1445,18 +1363,18 @@ export default function StoreStockEntryPage() {
               </div>
 
               {/* Modal Footer */}
-              <div className="pt-2 flex items-center justify-end gap-2">
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setAdjustingProduct(null)}
-                  className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-medium cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting || adjustQuantity === ""}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#348bdd] hover:bg-[#2b7bc4] text-white text-xs font-medium cursor-pointer shadow-2xs disabled:opacity-50"
+                  disabled={isSubmitting || adjustQuantity === "" || Number(adjustQuantity) <= 0}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#348bdd] hover:bg-[#2b7bc4] text-white text-xs font-semibold cursor-pointer shadow-xs disabled:opacity-50 transition-all"
                 >
                   {isSubmitting ? (
                     <>
@@ -1464,7 +1382,10 @@ export default function StoreStockEntryPage() {
                       <span>Saving...</span>
                     </>
                   ) : (
-                    <span>Save Stock Entry</span>
+                    <>
+                      <Check size={14} className="stroke-[2.5]" />
+                      <span>Save Stock Entry</span>
+                    </>
                   )}
                 </button>
               </div>

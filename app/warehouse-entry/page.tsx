@@ -61,6 +61,7 @@ interface RawMaterialItem {
   amount: number;
   bufferStock: number;
   category?: string;
+  imageUrl?: string;
 }
 
 interface CatalogProduct {
@@ -161,6 +162,7 @@ export default function WarehouseEntryPage() {
           amount: Number(d.data().amount) || 0,
           bufferStock: Number(d.data().bufferStock) || 0,
           category: d.data().category || "Raw Material",
+          imageUrl: d.data().imageUrl || "",
         }));
         setRawItems(list);
         setIsLoadingItems(false);
@@ -199,31 +201,31 @@ export default function WarehouseEntryPage() {
     return () => unsub();
   }, []);
 
-  // Distinct product categories for filter pills
+  // Distinct manufacturing item categories for filter pills
   const productCategories = useMemo(() => {
     const set = new Set<string>();
-    products.forEach((p) => {
-      if (p.categoryName) set.add(p.categoryName);
+    rawItems.forEach((r) => {
+      if (r.category) set.add(r.category);
     });
     return Array.from(set).sort();
-  }, [products]);
+  }, [rawItems]);
 
-  // Filtered products for Card Type UI ("image below name thats it")
+  // Filtered Manufacturing Stock Items for Card Type UI ("image below name thats it")
   const displayedCardProducts = useMemo(() => {
-    return products.filter((p) => {
-      if (selectedCategory !== "all" && p.categoryName !== selectedCategory) {
+    return rawItems.filter((item) => {
+      if (selectedCategory !== "all" && item.category !== selectedCategory) {
         return false;
       }
       if (itemSearchTerm.trim()) {
         const q = itemSearchTerm.toLowerCase().trim();
         return (
-          p.name.toLowerCase().includes(q) ||
-          p.categoryName.toLowerCase().includes(q)
+          item.name.toLowerCase().includes(q) ||
+          (item.category && item.category.toLowerCase().includes(q))
         );
       }
       return true;
     });
-  }, [products, selectedCategory, itemSearchTerm]);
+  }, [rawItems, selectedCategory, itemSearchTerm]);
 
   // --- Filtering & Pagination ---
 
@@ -298,35 +300,26 @@ export default function WarehouseEntryPage() {
     setIsAddModalOpen(true);
   };
 
-  // Toggle product selection from card UI ("image below name thats it")
-  const handleToggleProductSelection = (prod: CatalogProduct) => {
-    const rawMatch = rawItems.find(
-      (r) =>
-        r.id === prod.id ||
-        r.name.toLowerCase().trim() === prod.name.toLowerCase().trim()
-    );
-    const currentStock = rawMatch ? Number(rawMatch.stock) || 0 : 0;
+  // Toggle manufacturing stock item selection from card UI ("image below name thats it")
+  const handleToggleProductSelection = (item: RawMaterialItem) => {
+    const currentStock = Number(item.stock) || 0;
 
     setSelectedItems((prev) => {
-      const exists = prev.find(
-        (i) =>
-          i.itemId === prod.id ||
-          i.name.toLowerCase().trim() === prod.name.toLowerCase().trim()
-      );
+      const exists = prev.find((i) => i.itemId === item.id);
       if (exists) {
-        return prev.filter((i) => i.itemId !== exists.itemId);
+        return prev.filter((i) => i.itemId !== item.id);
       } else {
         return [
           ...prev,
           {
-            itemId: rawMatch ? rawMatch.id : prod.id,
-            name: prod.name,
-            imageUrl: prod.imageUrl || "/logo.png",
-            unit: prod.unit || (rawMatch ? rawMatch.unit : "KG"),
+            itemId: item.id,
+            name: item.name,
+            imageUrl: item.imageUrl || "/logo.png",
+            unit: item.unit || "KG",
             quantity: 1, // default quantity
             currentStock,
-            bufferStock: rawMatch ? rawMatch.bufferStock : 0,
-            costPerUnit: prod.amount || (rawMatch ? rawMatch.amount : 0),
+            bufferStock: item.bufferStock || 0,
+            costPerUnit: item.amount || 0,
           },
         ];
       }
@@ -1026,33 +1019,31 @@ export default function WarehouseEntryPage() {
 
             {/* Middle Main Scroll Area */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Product Cards Grid: "card type Ui image below name thats it" */}
+              {/* Manufacturing Stock Cards Grid: "card type Ui image below name thats it" */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
                     <Boxes size={14} className="text-[#348bdd]" />
-                    <span>Select Products ({selectedItems.length} selected)</span>
+                    <span>Select Manufacturing Stock Items ({selectedItems.length} selected)</span>
                   </h3>
                   <span className="text-[11px] text-slate-500 font-mono">
-                    Showing {displayedCardProducts.length} products • Click card to select
+                    Showing {displayedCardProducts.length} manufacturing items • Click card to select
                   </span>
                 </div>
 
-                {isLoadingProducts ? (
+                {isLoadingItems ? (
                   <div className="py-20 text-center text-slate-400">
                     <RotateCw size={24} className="animate-spin inline mr-2 text-[#348bdd]" />
-                    Loading products...
+                    Loading manufacturing stock items...
                   </div>
                 ) : displayedCardProducts.length === 0 ? (
                   <div className="py-16 text-center text-slate-400 text-xs bg-white rounded-xl border border-slate-200">
-                    No products match the filter.
+                    No manufacturing stock items match the filter.
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 max-h-[46vh] overflow-y-auto p-2.5 border border-slate-200 rounded-xl bg-white shadow-2xs">
                     {displayedCardProducts.map((prod) => {
-                      const isSelected = selectedItems.some(
-                        (i) => i.itemId === prod.id || i.name.toLowerCase().trim() === prod.name.toLowerCase().trim()
-                      );
+                      const isSelected = selectedItems.some((i) => i.itemId === prod.id);
                       return (
                         <div
                           key={prod.id}
@@ -1078,12 +1069,19 @@ export default function WarehouseEntryPage() {
                                 <Check size={13} />
                               </div>
                             )}
+                            {/* Stock badge */}
+                            <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/60 text-white font-mono text-[9px] backdrop-blur-xs">
+                              {prod.stock} {prod.unit}
+                            </div>
                           </div>
 
                           {/* Name below image - "image below name thats it" */}
                           <div className="p-2 text-center flex-1 flex flex-col justify-center bg-white border-t border-slate-100">
                             <span className="text-xs font-semibold text-slate-800 line-clamp-2 leading-tight">
                               {prod.name}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
+                              {prod.category || "Stock Item"}
                             </span>
                           </div>
                         </div>
@@ -1115,7 +1113,7 @@ export default function WarehouseEntryPage() {
                       <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-mono uppercase text-slate-500">
                         <tr>
                           <th className="py-2.5 px-4 w-12 text-center">#</th>
-                          <th className="py-2.5 px-4">Product</th>
+                          <th className="py-2.5 px-4">Manufacturing Item</th>
                           <th className="py-2.5 px-4 text-center">Manufacturing Stock</th>
                           <th className="py-2.5 px-4 text-center w-48">Deduct Quantity</th>
                           <th className="py-2.5 px-4 text-center">Remaining Stock</th>

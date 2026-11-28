@@ -39,6 +39,7 @@ import {
   LayoutGrid,
   List,
   Sparkles,
+  Maximize2,
 } from "lucide-react";
 
 type WorksheetUnit = "KG" | "Tray" | "Piece" | "Litre";
@@ -354,6 +355,16 @@ export default function WorkSheetPage() {
   const [deletingWorksheet, setDeletingWorksheet] = useState<WorksheetRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
+  // Fullscreen Edit Modal for Saved Worksheets
+  const [editingFullscreenWorksheet, setEditingFullscreenWorksheet] = useState<WorksheetRecord | null>(null);
+  const [fsDate, setFsDate] = useState<string>(getTodayStr());
+  const [fsNote, setFsNote] = useState<string>("");
+  const [fsSearch, setFsSearch] = useState<string>("");
+  const [fsScope, setFsScope] = useState<StatementSectionKey | "all">("all");
+  const [fsOnlySelected, setFsOnlySelected] = useState<boolean>(false);
+  const [fsDrafts, setFsDrafts] = useState<Record<string, RowDraft>>({});
+  const [isFsSaving, setIsFsSaving] = useState<boolean>(false);
+
   // Cleanup print layout after print dialog closes
   useEffect(() => {
     const onAfterPrint = () => {
@@ -581,6 +592,106 @@ export default function WorkSheetPage() {
     return map;
   }, [products]);
 
+  // Sectioned items for Print Daily Stock Statement
+  // When not a blank form, ONLY SELECTED ITEMS WITH QUANTITY > 0 ARE INCLUDED
+  const printSectionedProducts = useMemo(() => {
+    if (!printingDailyStatement) return allSectionedProducts;
+    if (printingDailyStatement.isBlank) return allSectionedProducts;
+
+    const savedMap = new Map<string, WorksheetSavedItem>();
+    (printingDailyStatement.items || []).forEach((item) => {
+      if (Number(item.quantity) > 0) {
+        savedMap.set(item.productId, item);
+      }
+    });
+
+    const map: Record<StatementSectionKey, CatalogProduct[]> = {
+      KAJU_ITEMS: [],
+      REGULAR_ITEMS: [],
+      KOVA_ITEMS: [],
+      SWEETS: [],
+      BENGALI_ITEMS: [],
+      BAKLAVAS_ITEMS: [],
+      HOT_ITEMS: [],
+      OTHER_ITEMS: [],
+    };
+
+    products.forEach((p) => {
+      if (savedMap.has(p.id)) {
+        const sec = getProductStatementSection(p);
+        map[sec].push(p);
+      }
+    });
+
+    // Also include any items that were saved in the worksheet but might not match products
+    (printingDailyStatement.items || []).forEach((item) => {
+      if (Number(item.quantity) > 0 && !products.some((p) => p.id === item.productId)) {
+        const dummy: CatalogProduct = {
+          id: item.productId,
+          name: item.productName,
+          categoryName: "Other",
+          shortCode: "",
+          barcode: "",
+          unit: item.unit,
+          kgPerTray: 2.5,
+          piecesPerKg: 0,
+          showInWorksheet: true,
+        };
+        const sec = getProductStatementSection(dummy);
+        map[sec].push(dummy);
+      }
+    });
+
+    return map;
+  }, [printingDailyStatement, allSectionedProducts, products]);
+
+  // Fullscreen edit entries & totals
+  const fsSelectedEntries = useMemo(() => {
+    const list: WorksheetSavedItem[] = [];
+    products.forEach((p) => {
+      const draft = fsDrafts[p.id];
+      const qNum = Number(draft?.quantity) || 0;
+      if (qNum > 0) {
+        const selectedUnit: WorksheetUnit = (draft?.unit as WorksheetUnit) || "Tray";
+        const calcKg = calculateRowKg(selectedUnit, qNum, p);
+        list.push({
+          productId: p.id,
+          productName: p.name,
+          categoryName: p.categoryName || "Other",
+          unit: selectedUnit,
+          quantity: qNum,
+          calculatedKg: calcKg,
+        });
+      }
+    });
+    return list;
+  }, [products, fsDrafts]);
+
+  const fsTotalKg = useMemo(() => {
+    return Number(fsSelectedEntries.reduce((acc, curr) => acc + curr.calculatedKg, 0).toFixed(2));
+  }, [fsSelectedEntries]);
+
+  const fsFilteredProducts = useMemo(() => {
+    return products.filter((p) => {
+      if (fsOnlySelected) {
+        const d = fsDrafts[p.id];
+        if (!d || Number(d.quantity) <= 0) return false;
+      }
+      if (fsScope !== "all") {
+        const sec = getProductStatementSection(p);
+        if (sec !== fsScope) return false;
+      }
+      if (fsSearch.trim()) {
+        const q = fsSearch.toLowerCase().trim();
+        return (
+          p.name.toLowerCase().includes(q) ||
+          (p.categoryName && p.categoryName.toLowerCase().includes(q))
+        );
+      }
+      return true;
+    });
+  }, [products, fsOnlySelected, fsScope, fsSearch, fsDrafts]);
+
   // Row interaction handlers
   const handleSelectUnit = (productId: string, unit: WorksheetUnit) => {
     setRowDrafts((prev) => {
@@ -756,12 +867,14 @@ export default function WorkSheetPage() {
     }
   };
 
-  // Load saved worksheet into Create/Edit form
-  const handleEditWorksheet = (ws: WorksheetRecord) => {
-    setEditingWorksheetId(ws.id);
-    setEditingWorksheetNumber(ws.worksheetNumber);
-    setWorksheetDate(ws.date || getTodayStr());
-    setWorksheetNote(ws.note || "");
+  // Open saved worksheet in Fullscreen Modal ("edit should be in fullscreen modal")
+  const handleOpenFullscreenEdit = (ws: WorksheetRecord) => {
+    setEditingFullscreenWorksheet(ws);
+    setFsDate(ws.date || getTodayStr());
+    setFsNote(ws.note || "");
+    setFsSearch("");
+    setFsScope("all");
+    setFsOnlySelected(false);
 
     const drafts: Record<string, RowDraft> = {};
     (ws.items || []).forEach((item) => {
@@ -770,10 +883,99 @@ export default function WorkSheetPage() {
         quantity: String(item.quantity),
       };
     });
-    setRowDrafts(drafts);
-    setProductScope("all");
-    setActiveTab("create");
-    showToast(`Editing Work Sheet #${ws.worksheetNumber}`, "info");
+    setFsDrafts(drafts);
+    showToast(`Editing Work Sheet #${ws.worksheetNumber} in fullscreen`, "info");
+  };
+
+  const handleEditWorksheet = (ws: WorksheetRecord) => {
+    handleOpenFullscreenEdit(ws);
+  };
+
+  // Fullscreen Modal Handlers
+  const handleFsSelectUnit = (productId: string, unit: WorksheetUnit) => {
+    setFsDrafts((prev) => {
+      const current = prev[productId] || { unit: "Tray", quantity: "1" };
+      const nextUnit = current.unit === unit ? "" : unit;
+      return {
+        ...prev,
+        [productId]: {
+          ...current,
+          unit: nextUnit,
+        },
+      };
+    });
+  };
+
+  const handleFsQuantityChange = (productId: string, rawVal: string) => {
+    setFsDrafts((prev) => {
+      const current = prev[productId] || { unit: "Tray", quantity: "" };
+      return {
+        ...prev,
+        [productId]: {
+          ...current,
+          quantity: rawVal,
+        },
+      };
+    });
+  };
+
+  const handleFsIncrement = (productId: string) => {
+    setFsDrafts((prev) => {
+      const current = prev[productId] || { unit: "Tray", quantity: "0" };
+      const currentNum = Number(current.quantity) || 0;
+      return {
+        ...prev,
+        [productId]: {
+          ...current,
+          quantity: String(currentNum + 1),
+        },
+      };
+    });
+  };
+
+  const handleFsDecrement = (productId: string) => {
+    setFsDrafts((prev) => {
+      const current = prev[productId] || { unit: "Tray", quantity: "0" };
+      const currentNum = Number(current.quantity) || 0;
+      const nextNum = Math.max(0, currentNum - 1);
+      return {
+        ...prev,
+        [productId]: {
+          ...current,
+          quantity: nextNum > 0 ? String(nextNum) : "",
+        },
+      };
+    });
+  };
+
+  // Save changes from Fullscreen Edit Modal
+  const handleSaveFullscreenEdit = async () => {
+    if (!editingFullscreenWorksheet) return;
+
+    if (fsSelectedEntries.length === 0) {
+      showToast("Cannot save an empty work sheet. Please enter at least 1 item quantity.", "error");
+      return;
+    }
+
+    setIsFsSaving(true);
+    try {
+      await updateDoc(doc(db, "worksheets", editingFullscreenWorksheet.id), {
+        date: fsDate,
+        note: fsNote.trim(),
+        items: fsSelectedEntries,
+        totalCalculatedKg: fsTotalKg,
+        totalItemsCount: fsSelectedEntries.length,
+        updatedAt: serverTimestamp(),
+      });
+
+      showToast(`Work Sheet #${editingFullscreenWorksheet.worksheetNumber} updated successfully!`, "success");
+      setEditingFullscreenWorksheet(null);
+    } catch (err: any) {
+      console.error("Error saving fullscreen edit:", err);
+      showToast("Failed to update work sheet: " + err.message, "error");
+    } finally {
+      setIsFsSaving(false);
+    }
   };
 
   // Delete saved worksheet
@@ -1948,6 +2150,18 @@ export default function WorkSheetPage() {
                   <Printer size={13} />
                   <span>Thermal Print</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = viewingWorksheet;
+                    setViewingWorksheet(null);
+                    handleOpenFullscreenEdit(target);
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Edit2 size={13} />
+                  <span>Edit Fullscreen</span>
+                </button>
               </div>
               <button
                 type="button"
@@ -2033,125 +2247,143 @@ export default function WorkSheetPage() {
                 <div className="divide-y divide-black flex flex-col justify-between">
                   <div>
                     {/* KAJU ITEMS */}
-                    <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-b border-black">
-                      KAJU ITEMS
-                    </div>
-                    <div>
-                      {(allSectionedProducts.KAJU_ITEMS || []).map((item) => {
-                        const saved = printingDailyStatement.items.find(
-                          (i) => i.productId === item.id
-                        );
-                        return (
-                          <div
-                            key={item.id}
-                            className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
-                          >
-                            <span className="font-semibold">{item.name}</span>
-                            <span className="font-mono font-bold">
-                              {printingDailyStatement.isBlank
-                                ? ""
-                                : saved
-                                ? `${saved.quantity} ${saved.unit}`
-                                : ""}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    {(printSectionedProducts.KAJU_ITEMS.length > 0 || printingDailyStatement.isBlank) && (
+                      <div>
+                        <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-b border-black">
+                          KAJU ITEMS
+                        </div>
+                        <div>
+                          {printSectionedProducts.KAJU_ITEMS.map((item) => {
+                            const saved = printingDailyStatement.items.find(
+                              (i) => i.productId === item.id
+                            );
+                            return (
+                              <div
+                                key={item.id}
+                                className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                              >
+                                <span className="font-semibold">{item.name}</span>
+                                <span className="font-mono font-bold">
+                                  {printingDailyStatement.isBlank
+                                    ? ""
+                                    : saved
+                                    ? `${saved.quantity} ${saved.unit}`
+                                    : ""}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* REGULAR ITEMS */}
-                    <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
-                      REGULAR ITEMS
-                    </div>
-                    <div>
-                      {(allSectionedProducts.REGULAR_ITEMS || []).map((item) => {
-                        const saved = printingDailyStatement.items.find(
-                          (i) => i.productId === item.id
-                        );
-                        return (
-                          <div
-                            key={item.id}
-                            className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
-                          >
-                            <span className="font-semibold">{item.name}</span>
-                            <span className="font-mono font-bold">
-                              {printingDailyStatement.isBlank
-                                ? ""
-                                : saved
-                                ? `${saved.quantity} ${saved.unit}`
-                                : ""}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    {(printSectionedProducts.REGULAR_ITEMS.length > 0 || printingDailyStatement.isBlank) && (
+                      <div>
+                        <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
+                          REGULAR ITEMS
+                        </div>
+                        <div>
+                          {printSectionedProducts.REGULAR_ITEMS.map((item) => {
+                            const saved = printingDailyStatement.items.find(
+                              (i) => i.productId === item.id
+                            );
+                            return (
+                              <div
+                                key={item.id}
+                                className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                              >
+                                <span className="font-semibold">{item.name}</span>
+                                <span className="font-mono font-bold">
+                                  {printingDailyStatement.isBlank
+                                    ? ""
+                                    : saved
+                                    ? `${saved.quantity} ${saved.unit}`
+                                    : ""}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Blank lined area at bottom of Column 1 */}
-                  <div className="p-2 border-t border-black min-h-[90px] space-y-3">
-                    <div className="border-b border-black border-dashed h-3" />
-                    <div className="border-b border-black border-dashed h-3" />
-                    <div className="border-b border-black border-dashed h-3" />
-                    <div className="border-b border-black border-dashed h-3" />
-                  </div>
+                  {/* Blank lined area at bottom of Column 1 (shown on blank template) */}
+                  {printingDailyStatement.isBlank && (
+                    <div className="p-2 border-t border-black min-h-[90px] space-y-3">
+                      <div className="border-b border-black border-dashed h-3" />
+                      <div className="border-b border-black border-dashed h-3" />
+                      <div className="border-b border-black border-dashed h-3" />
+                      <div className="border-b border-black border-dashed h-3" />
+                    </div>
+                  )}
                 </div>
 
                 {/* ================= PRINT COLUMN 2 ================= */}
                 <div className="divide-y divide-black flex flex-col justify-between">
                   <div>
                     {/* KOVA ITEMS */}
-                    <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-b border-black">
-                      KOVA ITEMS
-                    </div>
-                    <div>
-                      {(allSectionedProducts.KOVA_ITEMS || []).map((item) => {
-                        const saved = printingDailyStatement.items.find(
-                          (i) => i.productId === item.id
-                        );
-                        return (
-                          <div
-                            key={item.id}
-                            className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
-                          >
-                            <span className="font-semibold">{item.name}</span>
-                            <span className="font-mono font-bold">
-                              {printingDailyStatement.isBlank
-                                ? ""
-                                : saved
-                                ? `${saved.quantity} ${saved.unit}`
-                                : ""}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    {(printSectionedProducts.KOVA_ITEMS.length > 0 || printingDailyStatement.isBlank) && (
+                      <div>
+                        <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-b border-black">
+                          KOVA ITEMS
+                        </div>
+                        <div>
+                          {printSectionedProducts.KOVA_ITEMS.map((item) => {
+                            const saved = printingDailyStatement.items.find(
+                              (i) => i.productId === item.id
+                            );
+                            return (
+                              <div
+                                key={item.id}
+                                className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                              >
+                                <span className="font-semibold">{item.name}</span>
+                                <span className="font-mono font-bold">
+                                  {printingDailyStatement.isBlank
+                                    ? ""
+                                    : saved
+                                    ? `${saved.quantity} ${saved.unit}`
+                                    : ""}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* SWEETS */}
-                    <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
-                      SWEETS
-                    </div>
-                    <div>
-                      {(allSectionedProducts.SWEETS || []).map((item) => {
-                        const saved = printingDailyStatement.items.find(
-                          (i) => i.productId === item.id
-                        );
-                        return (
-                          <div
-                            key={item.id}
-                            className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
-                          >
-                            <span className="font-semibold">{item.name}</span>
-                            <span className="font-mono font-bold">
-                              {printingDailyStatement.isBlank
-                                ? ""
-                                : saved
-                                ? `${saved.quantity} ${saved.unit}`
-                                : ""}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    {(printSectionedProducts.SWEETS.length > 0 || printingDailyStatement.isBlank) && (
+                      <div>
+                        <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
+                          SWEETS
+                        </div>
+                        <div>
+                          {printSectionedProducts.SWEETS.map((item) => {
+                            const saved = printingDailyStatement.items.find(
+                              (i) => i.productId === item.id
+                            );
+                            return (
+                              <div
+                                key={item.id}
+                                className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                              >
+                                <span className="font-semibold">{item.name}</span>
+                                <span className="font-mono font-bold">
+                                  {printingDailyStatement.isBlank
+                                    ? ""
+                                    : saved
+                                    ? `${saved.quantity} ${saved.unit}`
+                                    : ""}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Daily Note Area */}
@@ -2175,94 +2407,13 @@ export default function WorkSheetPage() {
                 {/* ================= PRINT COLUMN 3 ================= */}
                 <div className="divide-y divide-black">
                   {/* BENGALI ITEMS */}
-                  <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-b border-black">
-                    BENGALI ITEMS
-                  </div>
-                  <div>
-                    {(allSectionedProducts.BENGALI_ITEMS || []).map((item) => {
-                      const saved = printingDailyStatement.items.find(
-                        (i) => i.productId === item.id
-                      );
-                      return (
-                        <div
-                          key={item.id}
-                          className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
-                        >
-                          <span className="font-semibold">{item.name}</span>
-                          <span className="font-mono font-bold">
-                            {printingDailyStatement.isBlank
-                              ? ""
-                              : saved
-                              ? `${saved.quantity} ${saved.unit}`
-                              : ""}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* BAKLAVA'S ITEMS */}
-                  <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
-                    BAKLAVA&apos;S ITEMS
-                  </div>
-                  <div>
-                    {(allSectionedProducts.BAKLAVAS_ITEMS || []).map((item) => {
-                      const saved = printingDailyStatement.items.find(
-                        (i) => i.productId === item.id
-                      );
-                      return (
-                        <div
-                          key={item.id}
-                          className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
-                        >
-                          <span className="font-semibold">{item.name}</span>
-                          <span className="font-mono font-bold">
-                            {printingDailyStatement.isBlank
-                              ? ""
-                              : saved
-                              ? `${saved.quantity} ${saved.unit}`
-                              : ""}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* HOT ITEMS */}
-                  <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
-                    HOT ITEMS
-                  </div>
-                  <div>
-                    {(allSectionedProducts.HOT_ITEMS || []).map((item) => {
-                      const saved = printingDailyStatement.items.find(
-                        (i) => i.productId === item.id
-                      );
-                      return (
-                        <div
-                          key={item.id}
-                          className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
-                        >
-                          <span className="font-semibold">{item.name}</span>
-                          <span className="font-mono font-bold">
-                            {printingDailyStatement.isBlank
-                              ? ""
-                              : saved
-                              ? `${saved.quantity} ${saved.unit}`
-                              : ""}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* OTHER ITEMS (if any) */}
-                  {(allSectionedProducts.OTHER_ITEMS || []).length > 0 && (
-                    <>
-                      <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
-                        OTHER ITEMS
+                  {(printSectionedProducts.BENGALI_ITEMS.length > 0 || printingDailyStatement.isBlank) && (
+                    <div>
+                      <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-b border-black">
+                        BENGALI ITEMS
                       </div>
                       <div>
-                        {allSectionedProducts.OTHER_ITEMS.map((item) => {
+                        {printSectionedProducts.BENGALI_ITEMS.map((item) => {
                           const saved = printingDailyStatement.items.find(
                             (i) => i.productId === item.id
                           );
@@ -2283,13 +2434,417 @@ export default function WorkSheetPage() {
                           );
                         })}
                       </div>
-                    </>
+                    </div>
+                  )}
+
+                  {/* BAKLAVA'S ITEMS */}
+                  {(printSectionedProducts.BAKLAVAS_ITEMS.length > 0 || printingDailyStatement.isBlank) && (
+                    <div>
+                      <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
+                        BAKLAVA&apos;S ITEMS
+                      </div>
+                      <div>
+                        {printSectionedProducts.BAKLAVAS_ITEMS.map((item) => {
+                          const saved = printingDailyStatement.items.find(
+                            (i) => i.productId === item.id
+                          );
+                          return (
+                            <div
+                              key={item.id}
+                              className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                            >
+                              <span className="font-semibold">{item.name}</span>
+                              <span className="font-mono font-bold">
+                                {printingDailyStatement.isBlank
+                                  ? ""
+                                  : saved
+                                  ? `${saved.quantity} ${saved.unit}`
+                                  : ""}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* HOT ITEMS */}
+                  {(printSectionedProducts.HOT_ITEMS.length > 0 || printingDailyStatement.isBlank) && (
+                    <div>
+                      <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
+                        HOT ITEMS
+                      </div>
+                      <div>
+                        {printSectionedProducts.HOT_ITEMS.map((item) => {
+                          const saved = printingDailyStatement.items.find(
+                            (i) => i.productId === item.id
+                          );
+                          return (
+                            <div
+                              key={item.id}
+                              className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                            >
+                              <span className="font-semibold">{item.name}</span>
+                              <span className="font-mono font-bold">
+                                {printingDailyStatement.isBlank
+                                  ? ""
+                                  : saved
+                                  ? `${saved.quantity} ${saved.unit}`
+                                  : ""}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OTHER ITEMS */}
+                  {(printSectionedProducts.OTHER_ITEMS.length > 0 || printingDailyStatement.isBlank) && (
+                    <div>
+                      <div className="bg-slate-200/80 font-black px-2 py-1 uppercase text-[11px] border-y border-black">
+                        OTHER ITEMS
+                      </div>
+                      <div>
+                        {printSectionedProducts.OTHER_ITEMS.map((item) => {
+                          const saved = printingDailyStatement.items.find(
+                            (i) => i.productId === item.id
+                          );
+                          return (
+                            <div
+                              key={item.id}
+                              className="px-2 py-0.5 border-b border-black/40 flex items-center justify-between text-[10px] leading-tight"
+                            >
+                              <span className="font-semibold">{item.name}</span>
+                              <span className="font-mono font-bold">
+                                {printingDailyStatement.isBlank
+                                  ? ""
+                                  : saved
+                                  ? `${saved.quantity} ${saved.unit}`
+                                  : ""}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
             </div>
           </div>
         </>
+      )}
+
+      {/* =================================================================== */}
+      {/* FULLSCREEN EDIT MODAL FOR SAVED WORKSHEET                          */}
+      {/* =================================================================== */}
+      {editingFullscreenWorksheet && (
+        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col font-sans text-slate-800 animate-in fade-in duration-150">
+          {/* Header Bar */}
+          <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-2xs">
+            <div className="px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              {/* Left: Title & Badge */}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingFullscreenWorksheet(null)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Close Fullscreen Editor"
+                >
+                  <X size={20} />
+                </button>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-slate-900 tracking-tight">
+                      Edit Work Sheet #{editingFullscreenWorksheet.worksheetNumber}
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono tracking-wider bg-[#348bdd]/10 text-[#348bdd] border border-[#348bdd]/20 uppercase">
+                      Fullscreen Mode
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Modify product quantities, switch measurement units, and update notes
+                  </p>
+                </div>
+              </div>
+
+              {/* Center: Date Picker */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-600 uppercase font-mono">Date:</span>
+                <div className="w-44">
+                  <CustomDatePicker
+                    value={fsDate}
+                    onChange={(d) => setFsDate(d)}
+                    placeholder="Worksheet Date"
+                  />
+                </div>
+              </div>
+
+              {/* Right: Metrics & Actions */}
+              <div className="flex items-center gap-2.5">
+                <div className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs font-mono text-slate-700">
+                  <span className="font-bold text-slate-900">{fsSelectedEntries.length}</span> items •{" "}
+                  <span className="font-bold text-[#348bdd]">{fsTotalKg} KG</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEditingFullscreenWorksheet(null)}
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveFullscreenEdit}
+                  disabled={isFsSaving || fsSelectedEntries.length === 0}
+                  className="px-4 py-2 rounded-xl bg-[#348bdd] hover:bg-[#2b7bc4] active:scale-[0.98] text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs disabled:opacity-50 transition-all cursor-pointer"
+                >
+                  {isFsSaving ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={14} className="stroke-[2.5]" />
+                      <span>Save Changes</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Sub-Bar */}
+            <div className="px-4 sm:px-6 py-2.5 bg-slate-50/80 border-t border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+              {/* Search */}
+              <div className="relative flex-1 max-w-sm">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search sweets in worksheet..."
+                  value={fsSearch}
+                  onChange={(e) => setFsSearch(e.target.value)}
+                  className="w-full pl-8 pr-7 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                />
+                {fsSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setFsSearch("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+
+              {/* Scope filter pills */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => setFsScope("all")}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer transition-colors whitespace-nowrap ${
+                    fsScope === "all"
+                      ? "bg-[#348bdd] text-white shadow-2xs"
+                      : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  All Categories
+                </button>
+                {(
+                  [
+                    "KAJU_ITEMS",
+                    "REGULAR_ITEMS",
+                    "KOVA_ITEMS",
+                    "SWEETS",
+                    "BENGALI_ITEMS",
+                    "BAKLAVAS_ITEMS",
+                    "HOT_ITEMS",
+                  ] as StatementSectionKey[]
+                ).map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => setFsScope(sec)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer transition-colors whitespace-nowrap ${
+                      fsScope === sec
+                        ? "bg-[#348bdd] text-white shadow-2xs"
+                        : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {STATEMENT_SECTIONS.find((s) => s.key === sec)?.title || sec}
+                  </button>
+                ))}
+              </div>
+
+              {/* Only Selected Filter Toggle */}
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none shrink-0 font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={fsOnlySelected}
+                  onChange={(e) => setFsOnlySelected(e.target.checked)}
+                  className="rounded border-slate-300 text-[#348bdd] focus:ring-0 cursor-pointer h-4 w-4"
+                />
+                <span>Only Selected ({fsSelectedEntries.length})</span>
+              </label>
+            </div>
+          </header>
+
+          {/* Main Fullscreen Scroll Area */}
+          <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+            {fsFilteredProducts.length === 0 ? (
+              <div className="py-20 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
+                <ClipboardList size={32} className="mx-auto text-slate-300 mb-2" />
+                <p className="text-sm font-semibold text-slate-700">No sweets match the filters</p>
+                <p className="text-xs text-slate-400 mt-1">Try clearing search or unchecking &quot;Only Selected&quot;</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+                {fsFilteredProducts.map((p) => {
+                  const draft = fsDrafts[p.id];
+                  const qNum = Number(draft?.quantity) || 0;
+                  const isSelected = qNum > 0;
+                  const currentUnit: WorksheetUnit = (draft?.unit as WorksheetUnit) || "Tray";
+                  const calcKg = calculateRowKg(currentUnit, qNum, p);
+
+                  return (
+                    <div
+                      key={p.id}
+                      className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between bg-white ${
+                        isSelected
+                          ? "border-[#348bdd] ring-1 ring-blue-100 shadow-xs"
+                          : "border-slate-200 hover:border-slate-300 shadow-2xs"
+                      }`}
+                    >
+                      {/* Name & Category */}
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="font-bold text-xs text-slate-900 line-clamp-1 leading-snug">
+                            {p.name}
+                          </h4>
+                          {isSelected && (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-[#348bdd] font-mono text-[10px] font-bold shrink-0">
+                              ~{calcKg} KG
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                          {p.categoryName || "General"}
+                        </p>
+
+                        {/* Unit selector pills */}
+                        <div className="flex items-center gap-1 mt-2.5">
+                          {ALL_UNITS.map((u) => (
+                            <button
+                              key={u}
+                              type="button"
+                              onClick={() => handleFsSelectUnit(p.id, u)}
+                              className={`flex-1 py-1 rounded-md text-[10px] font-bold font-mono transition-colors cursor-pointer text-center ${
+                                currentUnit === u
+                                  ? "bg-[#348bdd] text-white shadow-2xs"
+                                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              }`}
+                            >
+                              {u}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Stepper with minus, input, plus */}
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleFsDecrement(p.id)}
+                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center transition-all cursor-pointer font-bold shrink-0"
+                          title="Decrease"
+                        >
+                          <Minus size={13} />
+                        </button>
+
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          placeholder="0"
+                          value={draft?.quantity || ""}
+                          onChange={(e) => handleFsQuantityChange(p.id, e.target.value)}
+                          className="flex-1 min-w-0 h-8 text-center text-xs font-mono font-bold border border-slate-200 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => handleFsIncrement(p.id)}
+                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center transition-all cursor-pointer font-bold shrink-0"
+                          title="Increase"
+                        >
+                          <Plus size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Daily Note in Fullscreen */}
+            <div className="mt-6 p-4 rounded-2xl border border-slate-200 bg-white shadow-2xs space-y-2">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                Daily Note / Remarks
+              </label>
+              <textarea
+                rows={3}
+                placeholder="Write any production remarks, party balance notes, or special instructions..."
+                value={fsNote}
+                onChange={(e) => setFsNote(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+              />
+            </div>
+          </main>
+
+          {/* Sticky Footer */}
+          <footer className="sticky bottom-0 z-30 bg-white border-t border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between shadow-lg">
+            <div className="flex items-center gap-4 text-xs font-mono">
+              <span>
+                Selected Sweets: <strong className="text-slate-900">{fsSelectedEntries.length}</strong>
+              </span>
+              <span>
+                Total Production Weight: <strong className="text-[#348bdd] text-sm">{fsTotalKg} KG</strong>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingFullscreenWorksheet(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveFullscreenEdit}
+                disabled={isFsSaving || fsSelectedEntries.length === 0}
+                className="px-5 py-2 rounded-xl bg-[#348bdd] hover:bg-[#2b7bc4] active:scale-[0.98] text-white text-xs font-semibold flex items-center gap-2 shadow-xs disabled:opacity-50 transition-all cursor-pointer"
+              >
+                {isFsSaving ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} className="stroke-[2.5]" />
+                    <span>Save Changes</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </footer>
+        </div>
       )}
 
       {/* Delete Confirmation Modal */}
