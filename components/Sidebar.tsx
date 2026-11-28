@@ -35,6 +35,8 @@ import {
   Warehouse,
   Scan,
   Archive,
+  GripVertical,
+  RotateCcw,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -272,6 +274,148 @@ export default function Sidebar({
     left: number;
   } | null>(null);
 
+  // Drag and drop state for menu reordering
+  const [orderedItems, setOrderedItems] = React.useState<NavItem[]>(SIDEBAR_ITEMS);
+  const [draggedName, setDraggedName] = React.useState<string | null>(null);
+  const [dragOverName, setDragOverName] = React.useState<string | null>(null);
+  const [dropPosition, setDropPosition] = React.useState<"above" | "below" | null>(null);
+  const [justDroppedName, setJustDroppedName] = React.useState<string | null>(null);
+  const [isCustomOrdered, setIsCustomOrdered] = React.useState<boolean>(false);
+
+  // Load custom lineup from localStorage on mount
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem("ravi_sweets_sidebar_order_v1");
+      if (saved) {
+        const orderNames: string[] = JSON.parse(saved);
+        if (Array.isArray(orderNames) && orderNames.length > 0) {
+          const map = new Map(SIDEBAR_ITEMS.map((item) => [item.name, item]));
+          const sorted: NavItem[] = [];
+          for (const name of orderNames) {
+            const item = map.get(name);
+            if (item) {
+              sorted.push(item);
+              map.delete(name);
+            }
+          }
+          // Any newly added items in code not yet in storage
+          for (const remaining of map.values()) {
+            sorted.push(remaining);
+          }
+          setOrderedItems(sorted);
+          setIsCustomOrdered(true);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load sidebar order from storage", err);
+    }
+  }, []);
+
+  const handleDragStart = (e: React.DragEvent, name: string) => {
+    e.dataTransfer.setData("text/plain", name);
+    e.dataTransfer.effectAllowed = "move";
+    setDraggedName(name);
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetName: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (draggedName === targetName) {
+      if (dragOverName !== null) {
+        setDragOverName(null);
+        setDropPosition(null);
+      }
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    const pos = offsetY < rect.height / 2 ? "above" : "below";
+    if (dragOverName !== targetName || dropPosition !== pos) {
+      setDragOverName(targetName);
+      setDropPosition(pos);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent, name: string) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (
+      e.clientX < rect.left ||
+      e.clientX >= rect.right ||
+      e.clientY < rect.top ||
+      e.clientY >= rect.bottom
+    ) {
+      if (dragOverName === name) {
+        setDragOverName(null);
+        setDropPosition(null);
+      }
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetName: string) => {
+    e.preventDefault();
+    const sourceName = draggedName || e.dataTransfer.getData("text/plain");
+    if (!sourceName || sourceName === targetName) {
+      setDraggedName(null);
+      setDragOverName(null);
+      setDropPosition(null);
+      return;
+    }
+
+    setOrderedItems((prev) => {
+      const list = [...prev];
+      const sourceIndex = list.findIndex((it) => it.name === sourceName);
+      if (sourceIndex === -1) return prev;
+
+      const [removed] = list.splice(sourceIndex, 1);
+      let targetIndex = list.findIndex((it) => it.name === targetName);
+      if (targetIndex === -1) {
+        list.push(removed);
+      } else {
+        if (dropPosition === "below") {
+          targetIndex += 1;
+        }
+        list.splice(targetIndex, 0, removed);
+      }
+
+      try {
+        localStorage.setItem(
+          "ravi_sweets_sidebar_order_v1",
+          JSON.stringify(list.map((it) => it.name))
+        );
+        setIsCustomOrdered(true);
+      } catch (err) {
+        console.error("Failed to save sidebar order", err);
+      }
+
+      setJustDroppedName(sourceName);
+      setTimeout(() => {
+        setJustDroppedName((curr) => (curr === sourceName ? null : curr));
+      }, 700);
+
+      return list;
+    });
+
+    setDraggedName(null);
+    setDragOverName(null);
+    setDropPosition(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedName(null);
+    setDragOverName(null);
+    setDropPosition(null);
+  };
+
+  const handleResetOrder = () => {
+    try {
+      localStorage.removeItem("ravi_sweets_sidebar_order_v1");
+    } catch (err) {
+      console.error(err);
+    }
+    setOrderedItems(SIDEBAR_ITEMS);
+    setIsCustomOrdered(false);
+  };
+
   const toggleAccordion = (name: string) => {
     setOpenAccordions((prev) => ({
       ...prev,
@@ -281,15 +425,15 @@ export default function Sidebar({
 
   const visibleItems = React.useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.role === "admin") return SIDEBAR_ITEMS;
+    if (currentUser.role === "admin") return orderedItems;
 
-    return SIDEBAR_ITEMS.filter((item) => {
+    return orderedItems.filter((item) => {
       if (item.isAccordion && item.children) {
         return item.children.some((c) => canAccess(c.href));
       }
       return item.href ? canAccess(item.href) : false;
     });
-  }, [currentUser, canAccess]);
+  }, [currentUser, canAccess, orderedItems]);
 
   const isItemActive = (item: NavItem) => {
     if (item.isAccordion && item.children) {
@@ -341,9 +485,22 @@ export default function Sidebar({
         >
           {!isCollapsed ? (
             <>
-              <span className="text-[11px] font-medium tracking-wider uppercase text-slate-400">
-                Menu
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium tracking-wider uppercase text-slate-400">
+                  Menu
+                </span>
+                {isCustomOrdered && (
+                  <button
+                    type="button"
+                    onClick={handleResetOrder}
+                    title="Reset to default menu order"
+                    className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCcw size={11} />
+                    <span className="text-[10px] font-normal lowercase opacity-75">reset</span>
+                  </button>
+                )}
+              </div>
               {onToggleCollapse && (
                 <button
                   type="button"
@@ -372,19 +529,50 @@ export default function Sidebar({
         </div>
 
         {/* Navigation List */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col py-2 px-2 space-y-0.5">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col py-2 px-2 space-y-1">
           {visibleItems.map((item) => {
             const Icon = item.icon;
             const active = isItemActive(item);
+            const isDragging = draggedName === item.name;
+            const isOverAbove = dragOverName === item.name && dropPosition === "above";
+            const isOverBelow = dragOverName === item.name && dropPosition === "below";
+            const isJustDropped = justDroppedName === item.name;
 
-            // Accordion Item (e.g. Catering Manager)
+            // Accordion Item (e.g. Buyers)
             if (item.isAccordion && item.children) {
               const isOpen = openAccordions[item.name] ?? false;
 
               return (
-                <div key={item.name} className="flex flex-col space-y-0.5">
+                <div
+                  key={item.name}
+                  draggable={true}
+                  onDragStart={(e) => handleDragStart(e, item.name)}
+                  onDragOver={(e) => handleDragOver(e, item.name)}
+                  onDragLeave={(e) => handleDragLeave(e, item.name)}
+                  onDrop={(e) => handleDrop(e, item.name)}
+                  onDragEnd={handleDragEnd}
+                  className={`relative flex flex-col space-y-0.5 transition-all duration-200 ease-out ${
+                    isDragging
+                      ? "opacity-35 scale-[0.98] ring-2 ring-[#348bdd]/40 rounded-lg bg-sky-50/40 dark:bg-sky-950/20"
+                      : "opacity-100 scale-100"
+                  } ${
+                    isJustDropped
+                      ? "ring-2 ring-[#348bdd]/60 bg-sky-500/10 rounded-lg shadow-sm"
+                      : ""
+                  }`}
+                >
+                  {/* Glowing drop indicator line above */}
+                  {isOverAbove && (
+                    <div className="absolute -top-1 left-1.5 right-1.5 h-1 bg-[#348bdd] rounded-full shadow-[0_0_10px_#348bdd] z-30 pointer-events-none animate-pulse" />
+                  )}
+                  {/* Glowing drop indicator line below */}
+                  {isOverBelow && (
+                    <div className="absolute -bottom-1 left-1.5 right-1.5 h-1 bg-[#348bdd] rounded-full shadow-[0_0_10px_#348bdd] z-30 pointer-events-none animate-pulse" />
+                  )}
+
                   <button
                     type="button"
+                    draggable={false}
                     onClick={() => toggleAccordion(item.name)}
                     onMouseEnter={(e) => {
                       if (isCollapsed) {
@@ -399,7 +587,7 @@ export default function Sidebar({
                     }}
                     onMouseLeave={() => setHoveredItem(null)}
                     className={`group relative flex items-center ${
-                      isCollapsed ? "justify-center p-2.5" : "justify-between px-3 py-2"
+                      isCollapsed ? "justify-center p-2.5" : "justify-between px-2.5 py-2"
                     } rounded-md text-[13px] transition-colors duration-150 cursor-pointer w-full text-left`}
                     style={{
                       backgroundColor: active
@@ -417,9 +605,17 @@ export default function Sidebar({
                   >
                     <div
                       className={`flex items-center ${
-                        isCollapsed ? "justify-center" : "gap-2.5"
+                        isCollapsed ? "justify-center" : "gap-1.5"
                       } min-w-0`}
                     >
+                      {!isCollapsed && (
+                        <div
+                          className="opacity-0 group-hover:opacity-70 hover:opacity-100 transition-opacity duration-150 cursor-grab active:cursor-grabbing text-slate-400 -ml-1 shrink-0"
+                          title="Drag to reorder"
+                        >
+                          <GripVertical size={13} />
+                        </div>
+                      )}
                       <Icon
                         size={17}
                         className="shrink-0 transition-colors"
@@ -463,6 +659,7 @@ export default function Sidebar({
                           <Link
                             key={sub.name}
                             href={sub.href}
+                            draggable={false}
                             onClick={onCloseMobile}
                             className="group flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors duration-150 cursor-pointer"
                             style={{
@@ -504,73 +701,109 @@ export default function Sidebar({
             }
 
             return (
-              <Link
+              <div
                 key={item.name}
-                href={item.href || "#"}
-                onClick={onCloseMobile}
-                onMouseEnter={(e) => {
-                  if (isCollapsed) {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setHoveredItem({
-                      name: item.name,
-                      category: item.category,
-                      top: rect.top + rect.height / 2,
-                      left: rect.right + 10,
-                    });
-                  }
-                }}
-                onMouseLeave={() => setHoveredItem(null)}
-                className={`group relative flex items-center ${
-                  isCollapsed ? "justify-center p-2.5" : "justify-between px-3 py-2"
-                } rounded-md text-[13px] transition-colors duration-150`}
-                style={{
-                  backgroundColor: active
-                    ? "var(--color-bg-active)"
-                    : "transparent",
-                  color: active
-                    ? "var(--color-text-primary)"
-                    : "var(--color-text-secondary)",
-                  fontWeight: active ? 500 : 400,
-                  border: active
-                    ? "1px solid var(--color-border-base)"
-                    : "1px solid transparent",
-                  margin: 0,
-                }}
+                draggable={true}
+                onDragStart={(e) => handleDragStart(e, item.name)}
+                onDragOver={(e) => handleDragOver(e, item.name)}
+                onDragLeave={(e) => handleDragLeave(e, item.name)}
+                onDrop={(e) => handleDrop(e, item.name)}
+                onDragEnd={handleDragEnd}
+                className={`relative transition-all duration-200 ease-out ${
+                  isDragging
+                    ? "opacity-35 scale-[0.98] ring-2 ring-[#348bdd]/40 rounded-lg bg-sky-50/40 dark:bg-sky-950/20"
+                    : "opacity-100 scale-100"
+                } ${
+                  isJustDropped
+                    ? "ring-2 ring-[#348bdd]/60 bg-sky-500/10 rounded-lg shadow-sm"
+                    : ""
+                }`}
               >
-                <div
-                  className={`flex items-center ${
-                    isCollapsed ? "justify-center" : "gap-2.5"
-                  } min-w-0`}
+                {/* Glowing drop indicator line above */}
+                {isOverAbove && (
+                  <div className="absolute -top-1 left-1.5 right-1.5 h-1 bg-[#348bdd] rounded-full shadow-[0_0_10px_#348bdd] z-30 pointer-events-none animate-pulse" />
+                )}
+                {/* Glowing drop indicator line below */}
+                {isOverBelow && (
+                  <div className="absolute -bottom-1 left-1.5 right-1.5 h-1 bg-[#348bdd] rounded-full shadow-[0_0_10px_#348bdd] z-30 pointer-events-none animate-pulse" />
+                )}
+
+                <Link
+                  href={item.href || "#"}
+                  draggable={false}
+                  onClick={onCloseMobile}
+                  onMouseEnter={(e) => {
+                    if (isCollapsed) {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setHoveredItem({
+                        name: item.name,
+                        category: item.category,
+                        top: rect.top + rect.height / 2,
+                        left: rect.right + 10,
+                      });
+                    }
+                  }}
+                  onMouseLeave={() => setHoveredItem(null)}
+                  className={`group relative flex items-center ${
+                    isCollapsed ? "justify-center p-2.5" : "justify-between px-2.5 py-2"
+                  } rounded-md text-[13px] transition-colors duration-150`}
+                  style={{
+                    backgroundColor: active
+                      ? "var(--color-bg-active)"
+                      : "transparent",
+                    color: active
+                      ? "var(--color-text-primary)"
+                      : "var(--color-text-secondary)",
+                    fontWeight: active ? 500 : 400,
+                    border: active
+                      ? "1px solid var(--color-border-base)"
+                      : "1px solid transparent",
+                    margin: 0,
+                  }}
                 >
-                  <Icon
-                    size={17}
-                    className="shrink-0 transition-colors"
-                    style={{
-                      color: active
-                        ? "var(--color-brand-primary)"
-                        : "var(--color-text-muted)",
-                    }}
-                  />
-                  {!isCollapsed && (
-                    <span className="truncate tracking-tight">{item.name}</span>
+                  <div
+                    className={`flex items-center ${
+                      isCollapsed ? "justify-center" : "gap-1.5"
+                    } min-w-0`}
+                  >
+                    {!isCollapsed && (
+                      <div
+                        className="opacity-0 group-hover:opacity-70 hover:opacity-100 transition-opacity duration-150 cursor-grab active:cursor-grabbing text-slate-400 -ml-1 shrink-0"
+                        title="Drag to reorder"
+                      >
+                        <GripVertical size={13} />
+                      </div>
+                    )}
+                    <Icon
+                      size={17}
+                      className="shrink-0 transition-colors"
+                      style={{
+                        color: active
+                          ? "var(--color-brand-primary)"
+                          : "var(--color-text-muted)",
+                      }}
+                    />
+                    {!isCollapsed && (
+                      <span className="truncate tracking-tight">{item.name}</span>
+                    )}
+                  </div>
+
+                  {!isCollapsed && active && (
+                    <div
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: "var(--color-brand-primary)" }}
+                    />
                   )}
-                </div>
 
-                {!isCollapsed && active && (
-                  <div
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: "var(--color-brand-primary)" }}
-                  />
-                )}
-
-                {/* Active Indicator bar when collapsed */}
-                {isCollapsed && active && (
-                  <div
-                    className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r"
-                    style={{ backgroundColor: "var(--color-brand-primary)" }}
-                  />
-                )}
-              </Link>
+                  {/* Active Indicator bar when collapsed */}
+                  {isCollapsed && active && (
+                    <div
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r"
+                      style={{ backgroundColor: "var(--color-brand-primary)" }}
+                    />
+                  )}
+                </Link>
+              </div>
             );
           })}
         </div>
