@@ -18,6 +18,7 @@ import {
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ToastProvider";
 import { usePrinter } from "@/context/PrinterContext";
+import CustomDatePicker from "@/components/CustomDatePicker";
 import Link from "next/link";
 import {
   Receipt,
@@ -37,6 +38,7 @@ import {
   Printer,
   FileText,
   Clock,
+  Calendar,
   Boxes,
   Loader2,
   X,
@@ -102,6 +104,7 @@ interface DraftedBill {
   billNumber: string;
   storeId: string;
   storeName: string;
+  date?: string;
   customerId?: string;
   customerName?: string;
   customerPhone?: string;
@@ -114,6 +117,13 @@ interface DraftedBill {
 
 type PaymentMode = "Cash" | "UPI" | "Card" | "Split";
 
+function getTodayDateStr(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+    now.getDate()
+  ).padStart(2, "0")}`;
+}
+
 export default function PosBillingPage() {
   const { showToast } = useToast();
   const { printReceipt, settings, setIsConnectModalOpen } = usePrinter();
@@ -125,6 +135,7 @@ export default function PosBillingPage() {
   const [draftedBills, setDraftedBills] = useState<DraftedBill[]>([]);
   const [roundoffRules, setRoundoffRules] = useState<RoundoffRule[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
+  const [billingDate, setBillingDate] = useState<string>(getTodayDateStr());
   const [gstConfig, setGstConfig] = useState<{
     enabled: boolean;
     percentage: number;
@@ -773,14 +784,23 @@ export default function PosBillingPage() {
     setSelectedCustomerId("");
     setDiscountAmount("");
     setPaymentMode("Cash");
+    setBillingDate(getTodayDateStr());
   };
 
-  // Generate numeric bill number: YYMMDDHHMMSS
-  const generateNumericBillNumber = () => {
+  // Generate numeric bill number: YYMMDDHHMMSS (using selected billing date if custom)
+  const generateNumericBillNumber = (customDateStr?: string) => {
     const now = new Date();
-    const yy = String(now.getFullYear()).slice(-2);
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const dd = String(now.getDate()).padStart(2, "0");
+    let yy: string, mm: string, dd: string;
+    if (customDateStr) {
+      const parts = customDateStr.split("-");
+      yy = parts[0]?.slice(-2) || String(now.getFullYear()).slice(-2);
+      mm = (parts[1] || "").padStart(2, "0");
+      dd = (parts[2] || "").padStart(2, "0");
+    } else {
+      yy = String(now.getFullYear()).slice(-2);
+      mm = String(now.getMonth() + 1).padStart(2, "0");
+      dd = String(now.getDate()).padStart(2, "0");
+    }
     const hh = String(now.getHours()).padStart(2, "0");
     const min = String(now.getMinutes()).padStart(2, "0");
     const ss = String(now.getSeconds()).padStart(2, "0");
@@ -818,11 +838,12 @@ export default function PosBillingPage() {
     }
 
     try {
-      const billNumber = generateNumericBillNumber();
+      const billNumber = generateNumericBillNumber(billingDate);
       const draftData = {
         billNumber,
         storeId: selectedStoreId,
         storeName: currentStore?.name || "Main Chirala Store",
+        date: billingDate || getTodayDateStr(),
         customerId: selectedCustomerId || "",
         customerName: currentCustomer?.name || "Walk-In Customer",
         customerPhone: currentCustomer?.phone || "",
@@ -867,6 +888,9 @@ export default function PosBillingPage() {
     setCart(draft.items || []);
     setDiscountAmount(draft.discount || "");
     setPaymentMode((draft.paymentMethod as PaymentMode) || "Cash");
+    if (draft.date) {
+      setBillingDate(draft.date);
+    }
     setIsDraftsModalOpen(false);
     showToast(`Loaded Draft #${draft.billNumber}`, "info");
   };
@@ -902,14 +926,28 @@ export default function PosBillingPage() {
 
     setIsSubmitting(true);
     try {
-      const billNumber = generateNumericBillNumber();
       const now = new Date();
-      const dateStr = now.toISOString().split("T")[0];
+      const dateStr = billingDate || getTodayDateStr();
+      const isToday = dateStr === getTodayDateStr();
       const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+      const dateParts = dateStr.split("-");
+      const recordDateObj = new Date(
+        Number(dateParts[0]),
+        Number(dateParts[1]) - 1,
+        Number(dateParts[2]),
+        now.getHours(),
+        now.getMinutes(),
+        now.getSeconds()
+      );
+
+      const billNumber = generateNumericBillNumber(dateStr);
 
       const saleRecord = {
         billNumber,
         orderNumber: billNumber,
+        date: dateStr,
+        orderDate: dateStr,
         storeId: selectedStoreId,
         storeName: currentStore?.name || "Main Chirala Store",
         customerId: selectedCustomerId || "",
@@ -959,7 +997,7 @@ export default function PosBillingPage() {
             id: `inst_${Date.now()}`,
             amount: financials.grandTotal,
             paymentMethod: paymentMode,
-            date: new Date().toISOString(),
+            date: recordDateObj.toISOString(),
             note: "POS Counter Full Payment",
           },
         ],
@@ -968,7 +1006,7 @@ export default function PosBillingPage() {
         deliveryDate: dateStr,
         deliveryTime: timeStr,
         packingDescription: "Walk-In POS Immediate Counter Takeaway",
-        createdAt: serverTimestamp(),
+        createdAt: isToday ? serverTimestamp() : Timestamp.fromDate(recordDateObj),
       };
 
       const cleanSaleRecord = sanitizeForFirestore(saleRecord);
@@ -1148,8 +1186,35 @@ export default function PosBillingPage() {
           </div>
         </div>
 
-        {/* Store Selector, Go to Sales, Drafts Button, Printer Status */}
+        {/* Date Selector, Store Selector, Go to Sales, Drafts Button, Printer Status */}
         <div className="flex items-center gap-2.5 text-xs">
+          {/* Date Selector */}
+          <div
+            className={`flex items-center gap-1.5 border rounded-lg px-2.5 py-1 transition-colors ${
+              billingDate !== getTodayDateStr()
+                ? "bg-amber-50 border-amber-300 text-amber-900"
+                : "bg-slate-50 border-slate-200 text-slate-700"
+            }`}
+            title="Sales will be recorded under this selected date"
+          >
+            <Calendar
+              size={13}
+              className={billingDate !== getTodayDateStr() ? "text-amber-600" : "text-[#348bdd]"}
+            />
+            <span className="text-[11px] font-semibold whitespace-nowrap">Date:</span>
+            <CustomDatePicker
+              value={billingDate}
+              onChange={(val) => setBillingDate(val || getTodayDateStr())}
+              compact
+              clearable={false}
+            />
+            {billingDate !== getTodayDateStr() && (
+              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-200 text-amber-800 uppercase font-mono">
+                Custom
+              </span>
+            )}
+          </div>
+
           {/* Go to Sales Shortcut Button */}
           <Link
             href="/walk-in-sales"
