@@ -18,6 +18,7 @@ import {
   Search,
   Filter,
   Plus,
+  Minus,
   Boxes,
   Loader2,
   AlertTriangle,
@@ -31,6 +32,8 @@ import {
   Info,
   X,
   Pencil,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 
 interface StoreOption {
@@ -79,6 +82,7 @@ export default function StoreStockEntryPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [stockStatusFilter, setStockStatusFilter] = useState<"all" | "in_stock" | "low_stock" | "out_of_stock">("all");
+  const [viewMode, setViewMode] = useState<"card" | "table">("card");
 
   // Adjustment Modal State
   const [adjustingProduct, setAdjustingProduct] = useState<ProductItem | null>(null);
@@ -677,8 +681,8 @@ export default function StoreStockEntryPage() {
           ))}
         </div>
 
-        {/* Right: Stock Status & Search */}
-        <div className="flex items-center gap-2.5 text-xs">
+        {/* Right: Stock Status, Search & View Mode Switcher */}
+        <div className="flex flex-wrap items-center gap-2.5 text-xs">
           {enteredItemsCount > 0 && (
             <button
               type="button"
@@ -712,7 +716,7 @@ export default function StoreStockEntryPage() {
           </select>
 
           <div
-            className="flex items-center gap-2 px-3 py-1 rounded-md border bg-white w-52"
+            className="flex items-center gap-2 px-3 py-1 rounded-md border bg-white w-48 sm:w-56"
             style={{ borderColor: "var(--color-border-base)" }}
           >
             <Search size={13} style={{ color: "var(--color-text-muted)" }} />
@@ -725,47 +729,309 @@ export default function StoreStockEntryPage() {
               style={{ color: "var(--color-text-primary)" }}
             />
           </div>
+
+          {/* View Mode Switcher */}
+          <div className="flex items-center border border-slate-200 rounded-lg p-0.5 bg-slate-50 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setViewMode("card")}
+              className={`p-1.5 rounded-md transition-all cursor-pointer ${
+                viewMode === "card"
+                  ? "bg-white text-[#348bdd] shadow-2xs font-semibold"
+                  : "text-slate-400 hover:text-slate-700"
+              }`}
+              title="Card View (Default)"
+            >
+              <LayoutGrid size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              className={`p-1.5 rounded-md transition-all cursor-pointer ${
+                viewMode === "table"
+                  ? "bg-white text-[#348bdd] shadow-2xs font-semibold"
+                  : "text-slate-400 hover:text-slate-700"
+              }`}
+              title="Table View"
+            >
+              <List size={14} />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Main Table / Grid List (Supabase Table Editor Grid Style) */}
-      <div
-        className="rounded-lg border bg-white overflow-hidden shadow-xs"
-        style={{ borderColor: "var(--color-border-base)" }}
-      >
-        {isLoading ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-3">
-            <Loader2
-              size={24}
-              className="animate-spin"
-              style={{ color: "var(--color-brand-primary)" }}
-            />
-            <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-              Loading store inventory...
-            </span>
+      {/* Main Content: Card Grid (Default) or Table */}
+      {isLoading ? (
+        <div
+          className="rounded-xl border bg-white py-20 flex flex-col items-center justify-center gap-3 shadow-xs"
+          style={{ borderColor: "var(--color-border-base)" }}
+        >
+          <Loader2
+            size={24}
+            className="animate-spin"
+            style={{ color: "var(--color-brand-primary)" }}
+          />
+          <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+            Loading store inventory...
+          </span>
+        </div>
+      ) : stockRows.length === 0 ? (
+        <div
+          className="rounded-xl border bg-white py-20 flex flex-col items-center justify-center text-center p-6 shadow-xs"
+          style={{ borderColor: "var(--color-border-base)" }}
+        >
+          <div
+            className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+            style={{
+              backgroundColor: "var(--color-bg-subtle)",
+              color: "var(--color-text-muted)",
+            }}
+          >
+            <Boxes size={22} />
           </div>
-        ) : stockRows.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center text-center p-6">
-            <div
-              className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
-              style={{
-                backgroundColor: "var(--color-bg-subtle)",
-                color: "var(--color-text-muted)",
-              }}
-            >
-              <Boxes size={22} />
-            </div>
-            <h3
-              className="text-sm text-[var(--color-text-primary)]"
-              style={{ fontWeight: 500 }}
-            >
-              No Products Found
-            </h3>
-            <p className="text-xs mt-1 max-w-sm" style={{ color: "var(--color-text-muted)" }}>
-              No products match your current category or search filters.
-            </p>
-          </div>
-        ) : (
+          <h3
+            className="text-sm text-[var(--color-text-primary)]"
+            style={{ fontWeight: 500 }}
+          >
+            No Products Found
+          </h3>
+          <p className="text-xs mt-1 max-w-sm" style={{ color: "var(--color-text-muted)" }}>
+            No products match your current category or search filters.
+          </p>
+        </div>
+      ) : viewMode === "card" ? (
+        /* CARD UI GRID (Default) */
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {stockRows.map(({ product, currentQty, calculatedKg }, idx) => {
+            const isOutOfStock = currentQty <= 0;
+            const isLowStock = !isOutOfStock && calculatedKg < 5;
+            const rowInput = getRowInput(product);
+            const enteredNum = Number(rowInput.quantity) || 0;
+            const enteredKg = convertInputToKg(product, enteredNum, rowInput.unit);
+
+            return (
+              <div
+                key={`${product.id}_${idx}`}
+                className="bg-white rounded-2xl border border-slate-200 hover:border-[#348bdd]/50 hover:shadow-md transition-all duration-200 flex flex-col justify-between overflow-hidden group shadow-2xs"
+              >
+                {/* 1. Product Image & Floating Badges */}
+                <div className="relative aspect-4/3 w-full bg-slate-100 overflow-hidden">
+                  {product.imageUrl ? (
+                    <img
+                      src={product.imageUrl}
+                      alt={product.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "/logo.png";
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 text-slate-300">
+                      <Boxes size={34} />
+                    </div>
+                  )}
+
+                  {/* Gradient overlay for badge readability */}
+                  <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/45 to-transparent pointer-events-none" />
+
+                  {/* Category Tag */}
+                  {product.categoryName && (
+                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/60 text-white backdrop-blur-xs font-mono shadow-xs">
+                      {product.categoryName}
+                    </span>
+                  )}
+
+                  {/* Stock Status Badge */}
+                  <span
+                    className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs ${
+                      isOutOfStock
+                        ? "bg-rose-500 text-white"
+                        : isLowStock
+                        ? "bg-amber-500 text-white"
+                        : "bg-emerald-600 text-white"
+                    }`}
+                  >
+                    {isOutOfStock ? "Out of Stock" : isLowStock ? "Low Stock" : "In Stock"}
+                  </span>
+                </div>
+
+                {/* 2. Card Body */}
+                <div className="p-3.5 flex-1 flex flex-col justify-between space-y-3">
+                  {/* Name and Price */}
+                  <div>
+                    <h3
+                      className="font-bold text-sm text-slate-900 group-hover:text-[#348bdd] transition-colors line-clamp-1"
+                      title={product.name}
+                    >
+                      {product.name}
+                    </h3>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono mt-1">
+                      <span>₹{product.amount} / {product.unit}</span>
+                      {product.unit.toLowerCase() === "piece" && product.piecesPerKg ? (
+                        <span className="text-blue-600 font-medium">{product.piecesPerKg} pcs/KG</span>
+                      ) : product.unit.toLowerCase() === "tray" ? (
+                        <span className="text-purple-600 font-medium">{product.kgPerTray || 2.5} KG/tray</span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Current Available Stock Box */}
+                  <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-100 text-xs">
+                    <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                      <Scale size={12} className="text-[#348bdd]" />
+                      In Store:
+                    </span>
+                    <div className="text-right">
+                      <span
+                        className={`font-mono font-bold text-xs ${
+                          isOutOfStock ? "text-rose-600" : isLowStock ? "text-amber-600" : "text-emerald-700"
+                        }`}
+                      >
+                        {currentQty} {product.unit}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400 ml-1">
+                        (~{calculatedKg.toFixed(2)} KG)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Stock Entry Section */}
+                  <div className="space-y-2 pt-1 border-t border-slate-100">
+                    {/* Mode Toggle & Unit Selection */}
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div className="inline-flex rounded-lg p-0.5 bg-slate-100 border border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => handleRowInputChange(product.id, "mode", "inward", product.unit)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors cursor-pointer ${
+                            rowInput.mode === "inward"
+                              ? "bg-emerald-600 text-white shadow-2xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                          title="Mode: + Inward (Adds to current stock)"
+                        >
+                          + Inward
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRowInputChange(product.id, "mode", "set", product.unit)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors cursor-pointer ${
+                            rowInput.mode === "set"
+                              ? "bg-purple-600 text-white shadow-2xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                          title="Mode: = Set (Overrides stock count)"
+                        >
+                          = Set
+                        </button>
+                      </div>
+
+                      <select
+                        value={rowInput.unit}
+                        onChange={(e) => handleRowInputChange(product.id, "unit", e.target.value, "Tray")}
+                        className="px-2 py-1 text-[11px] font-medium border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#348bdd] cursor-pointer shadow-2xs"
+                      >
+                        <option value="Tray">Tray</option>
+                        <option value="KG">KG</option>
+                        <option value="piece">piece</option>
+                        <option value="litre">litre</option>
+                      </select>
+                    </div>
+
+                    {/* Stepper with Minus, Input, Plus, and Pencil */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const current = Math.max(0, (Number(rowInput.quantity) || 0) - 1);
+                          handleRowInputChange(product.id, "quantity", String(current), product.unit);
+                        }}
+                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center transition-all cursor-pointer font-bold shrink-0"
+                        title="Decrease quantity (-1)"
+                      >
+                        <Minus size={13} />
+                      </button>
+
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        placeholder="0"
+                        value={rowInput.quantity}
+                        onWheel={(e) => (e.target as HTMLElement).blur()}
+                        onChange={(e) => handleRowInputChange(product.id, "quantity", e.target.value, product.unit)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSaveRowStock(product);
+                          }
+                        }}
+                        className="flex-1 min-w-0 h-8 text-center text-xs font-mono font-bold border border-slate-200 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#348bdd] shadow-2xs"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const current = (Number(rowInput.quantity) || 0) + 1;
+                          handleRowInputChange(product.id, "quantity", String(current), product.unit);
+                        }}
+                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center transition-all cursor-pointer font-bold shrink-0"
+                        title="Increase quantity (+1)"
+                      >
+                        <Plus size={13} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAdjustment(product, "set")}
+                        className="w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-100 active:scale-95 text-slate-500 flex items-center justify-center transition-all cursor-pointer shrink-0 shadow-2xs"
+                        title="Record detailed adjustment / notes / spoilage"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    </div>
+
+                    {/* Inflow Preview & Add Stock Button */}
+                    <div className="flex items-center gap-2 pt-1">
+                      {enteredKg > 0 ? (
+                        <span className="text-[10px] font-mono font-semibold text-[#348bdd] bg-blue-50/80 px-2 py-1 rounded-md border border-blue-200 truncate flex-1 shadow-2xs">
+                          ~{enteredKg.toFixed(2)} KG
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-slate-400 flex-1 truncate">
+                          Enter qty
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        disabled={!rowInput.quantity || Number(rowInput.quantity) <= 0 || savingId === product.id}
+                        onClick={() => handleSaveRowStock(product)}
+                        className="px-3 h-8 rounded-lg text-white font-medium text-xs flex items-center gap-1.5 transition-all shadow-2xs hover:brightness-105 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                        style={{ backgroundColor: "var(--color-brand-primary)" }}
+                      >
+                        {savingId === product.id ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <>
+                            <CheckCircle2 size={13} />
+                            <span>{rowInput.mode === "inward" ? "Add Stock" : "Set Count"}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* TABLE VIEW */
+        <div
+          className="rounded-lg border bg-white overflow-hidden shadow-xs"
+          style={{ borderColor: "var(--color-border-base)" }}
+        >
           <div className="overflow-x-auto border-t" style={{ borderColor: "var(--color-border-base)" }}>
             <table className="w-full text-left text-xs border-collapse">
               <thead
@@ -1028,8 +1294,8 @@ export default function StoreStockEntryPage() {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* 4. Stock Adjustment / Inward Modal */}
       {adjustingProduct && (
