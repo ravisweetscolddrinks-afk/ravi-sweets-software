@@ -1,3 +1,5 @@
+import { AdditionalAttachment } from "./utility";
+
 export type OrderStatus =
   | "Created"
   | "Manufacturing In Progress"
@@ -62,6 +64,7 @@ export interface OrderRecord {
   packingDescription: string;
   imageUrl?: string; // Reference image uploaded to ImageKit
   items: OrderItem[];
+  additionalAttachments?: AdditionalAttachment[];
   subtotal: number;
   discount: number;
   taxableSubtotal: number;

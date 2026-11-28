@@ -80,6 +80,7 @@ import {
   Star,
 } from "lucide-react";
 import { RoundoffRule, findMatchingRoundoffRule } from "@/types/roundoff";
+import { AdditionalAttachment, UtilityItem } from "@/types/utility";
 
 // --- TYPES ---
 export type OrderStatus =
@@ -148,6 +149,8 @@ export interface OrderRecord {
   packingDescription: string;
   imageUrl?: string;
   items: OrderItem[];
+  additionalAttachments?: AdditionalAttachment[];
+  attachmentsTotal?: number;
   subtotal: number;
   discount: number;
   taxableSubtotal: number;
@@ -351,6 +354,17 @@ export default function OrdersPage() {
   const [orderStatus, setOrderStatus] = useState<OrderStatus>("Created");
   const [formValidationErrors, setFormValidationErrors] = useState<{ [key: string]: string }>({});
 
+  // Additional Attachments state
+  const [orderAttachments, setOrderAttachments] = useState<AdditionalAttachment[]>([]);
+  const [isAttachmentsOpen, setIsAttachmentsOpen] = useState<boolean>(false);
+  const [isAddAttachmentModalOpen, setIsAddAttachmentModalOpen] = useState<boolean>(false);
+  const [availableUtilities, setAvailableUtilities] = useState<UtilityItem[]>([]);
+  const [newAttachmentType, setNewAttachmentType] = useState<"box" | "sticker">("box");
+  const [selectedUtilityId, setSelectedUtilityId] = useState<string>("");
+  const [customAttachmentName, setCustomAttachmentName] = useState<string>("");
+  const [attachmentQty, setAttachmentQty] = useState<number>(1);
+  const [attachmentRate, setAttachmentRate] = useState<number | string>("");
+
   // Delete state
   const [deletingOrder, setDeletingOrder] = useState<OrderRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
@@ -540,6 +554,23 @@ export default function OrdersPage() {
       () => {}
     );
 
+    // Realtime Utilities Listener (Boxes & Stickers)
+    const unsubUtilities = onSnapshot(
+      collection(db, "utilities_items"),
+      (snap) => {
+        const list: UtilityItem[] = snap.docs.map((d) => ({
+          id: d.id,
+          name: d.data().name || "",
+          type: (d.data().type === "sticker" ? "sticker" : "box") as any,
+          price: Number(d.data().price) || 0,
+          description: d.data().description || "",
+          isActive: d.data().isActive !== undefined ? d.data().isActive : true,
+        }));
+        setAvailableUtilities(list);
+      },
+      (err) => console.warn("Utilities error:", err)
+    );
+
     const today = new Date().toISOString().split("T")[0];
     setCurrentDateStr(today);
     setCustomStartDate(today);
@@ -556,6 +587,7 @@ export default function OrdersPage() {
       unsubProducts();
       unsubRules();
       unsubInvoice();
+      unsubUtilities();
     };
   }, []);
 
@@ -654,9 +686,15 @@ export default function OrdersPage() {
   }, [filteredOrders, currentPage]);
 
   // --- 4. Live Calculations (Subtotal, GST, Grand Total, Balance) ---
-  const rawItemsTotal = useMemo(() => {
+  const sweetsSubtotal = useMemo(() => {
     return selectedItems.reduce((acc, item) => acc + item.totalAmount, 0);
   }, [selectedItems]);
+
+  const attachmentsTotal = useMemo(() => {
+    return orderAttachments.reduce((sum, a) => sum + (Number(a.totalAmount) || 0), 0);
+  }, [orderAttachments]);
+
+  const rawItemsTotal = sweetsSubtotal + attachmentsTotal;
 
   const numDiscount = discountAmount === "" ? 0 : Number(discountAmount);
   const effectiveItemsTotal = Math.max(0, rawItemsTotal - numDiscount);
@@ -713,6 +751,8 @@ export default function OrdersPage() {
     else paymentStatus = "Partial";
 
     return {
+      sweetsSubtotal,
+      attachmentsTotal,
       rawItemsTotal,
       displaySubtotal,
       numDiscount,
@@ -733,7 +773,47 @@ export default function OrdersPage() {
     paymentMethod,
     splitDetails,
     numDiscount,
+    sweetsSubtotal,
+    attachmentsTotal,
   ]);
+
+  const handleAddOrderAttachment = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = customAttachmentName.trim();
+    if (!name) {
+      showToast("Please enter or select an attachment name", "error");
+      return;
+    }
+    const qty = Number(attachmentQty);
+    if (isNaN(qty) || qty <= 0) {
+      showToast("Please enter a valid quantity", "error");
+      return;
+    }
+    const rate = Number(attachmentRate);
+    if (isNaN(rate) || rate < 0) {
+      showToast("Please enter a valid rate", "error");
+      return;
+    }
+
+    const newLine: AdditionalAttachment = {
+      id: `ord_att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      utilityId: selectedUtilityId || undefined,
+      type: newAttachmentType,
+      name,
+      quantity: qty,
+      rate,
+      totalAmount: Number((qty * rate).toFixed(2)),
+    };
+
+    setOrderAttachments((prev) => [...prev, newLine]);
+    setIsAddAttachmentModalOpen(false);
+    setIsAttachmentsOpen(true);
+    showToast(`Added ${qty} × ${name}`, "success");
+  };
+
+  const handleRemoveOrderAttachment = (attId: string) => {
+    setOrderAttachments((prev) => prev.filter((a) => a.id !== attId));
+  };
 
   // Keep receivedAmount in sync when split details update
   useEffect(() => {
@@ -995,6 +1075,8 @@ export default function OrdersPage() {
     setOrderImageFile(null);
     setOrderImagePreview("");
     setSelectedItems([]);
+    setOrderAttachments([]);
+    setIsAttachmentsOpen(false);
     setDiscountAmount("");
     setReceivedAmount("");
     setPaymentMethod("Cash");
@@ -1117,6 +1199,8 @@ export default function OrdersPage() {
     setOrderImageFile(null);
     setOrderImagePreview(order.imageUrl || "");
     setSelectedItems(order.items || []);
+    setOrderAttachments(order.additionalAttachments || []);
+    setIsAttachmentsOpen(Boolean(order.additionalAttachments?.length));
     setDiscountAmount(order.discount || "");
     setReceivedAmount(order.receivedAmount || "");
     setPaymentMethod(order.paymentMethod || "Cash");
@@ -1256,6 +1340,8 @@ export default function OrdersPage() {
         packingDescription: (packingDescription || "").trim(),
         imageUrl: uploadedImageUrl || "",
         items: sanitizedItems,
+        additionalAttachments: orderAttachments,
+        attachmentsTotal: calculatedFinancials.attachmentsTotal || 0,
         subtotal: calculatedFinancials.displaySubtotal || 0,
         discount: calculatedFinancials.displayDiscount || 0,
         taxableSubtotal: calculatedFinancials.taxableSubtotal || 0,
@@ -2890,15 +2976,134 @@ export default function OrdersPage() {
                 className="p-4 border-t bg-slate-50/70 space-y-3 shrink-0"
                 style={{ borderColor: "var(--color-border-subtle)" }}
               >
+                {/* Additional Attachments Accordion */}
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setIsAttachmentsOpen(!isAttachmentsOpen)}
+                    className="w-full px-3 py-2 flex items-center justify-between text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-md bg-sky-50 text-[#348bdd] flex items-center justify-center shrink-0">
+                        <Boxes size={13} />
+                      </div>
+                      <span>Additional Attachments</span>
+                      {orderAttachments.length > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-[#348bdd] text-white font-mono font-semibold">
+                          {orderAttachments.length}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {attachmentsTotal > 0 && (
+                        <span className="text-[11px] font-mono font-bold text-[#348bdd]">
+                          +₹{attachmentsTotal.toFixed(2)}
+                        </span>
+                      )}
+                      <ChevronDown
+                        size={14}
+                        className={`text-slate-400 transition-transform duration-200 ${
+                          isAttachmentsOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </div>
+                  </button>
+
+                  {isAttachmentsOpen && (
+                    <div className="p-2.5 pt-0 border-t border-slate-100 space-y-2 bg-slate-50/50">
+                      {orderAttachments.length === 0 ? (
+                        <div className="py-2 text-center text-[11px] text-slate-400">
+                          No boxes or stickers added yet.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto pt-1">
+                          {orderAttachments.map((att) => (
+                            <div
+                              key={att.id}
+                              className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-slate-200 text-xs"
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span
+                                  className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                                    att.type === "box"
+                                      ? "bg-sky-50 text-[#348bdd]"
+                                      : "bg-amber-50 text-amber-700"
+                                  }`}
+                                >
+                                  {att.type}
+                                </span>
+                                <span className="truncate text-slate-800 font-medium">
+                                  {att.name}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-[11px] text-slate-400 font-mono">
+                                  {att.quantity} × ₹{att.rate}
+                                </span>
+                                <span className="text-xs font-mono font-bold text-slate-900">
+                                  ₹{att.totalAmount.toFixed(2)}
+                                </span>
+                                {modalMode !== "view" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveOrderAttachment(att.id)}
+                                    className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                    title="Remove"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {modalMode !== "view" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAttachmentType("box");
+                            setSelectedUtilityId("");
+                            setCustomAttachmentName("");
+                            setAttachmentQty(1);
+                            setAttachmentRate("");
+                            setIsAddAttachmentModalOpen(true);
+                          }}
+                          className="w-full py-1.5 px-2 rounded-lg border border-dashed border-[#348bdd]/40 hover:border-[#348bdd] bg-sky-50/40 hover:bg-sky-50 text-xs font-medium text-[#348bdd] flex items-center justify-center gap-1.5 transition-colors cursor-pointer mt-1"
+                        >
+                          <Plus size={13} />
+                          <span>Add Box or Sticker</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {/* Discount & Subtotal summary */}
                 <div className="space-y-1.5 text-xs">
-                  {/* Subtotal */}
+                  {/* Items Subtotal */}
                   <div className="flex items-center justify-between text-slate-600">
-                    <span>Subtotal:</span>
+                    <span>Items Subtotal:</span>
                     <span className="font-mono font-medium text-slate-800">
-                      ₹{calculatedFinancials.displaySubtotal.toFixed(2)}
+                      ₹{calculatedFinancials.sweetsSubtotal.toFixed(2)}
                     </span>
                   </div>
+
+                  {/* Attachments Total */}
+                  {calculatedFinancials.attachmentsTotal > 0 && (
+                    <div className="flex items-center justify-between text-[#348bdd]">
+                      <span className="flex items-center gap-1 font-medium">
+                        <Boxes size={12} />
+                        <span>Attachments:</span>
+                      </span>
+                      <span className="font-mono font-semibold">
+                        +₹{calculatedFinancials.attachmentsTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Discount input */}
                   <div className="flex items-center justify-between">
@@ -3868,6 +4073,46 @@ export default function OrdersPage() {
                 </div>
               </div>
 
+              {/* Additional Attachments in View Modal */}
+              {viewingOrder.additionalAttachments && viewingOrder.additionalAttachments.length > 0 && (
+                <div
+                  className="rounded-lg border overflow-hidden bg-white"
+                  style={{ borderColor: "var(--color-border-subtle)" }}
+                >
+                  <div className="px-4 py-2 bg-slate-50 border-b flex items-center justify-between text-xs font-semibold text-slate-800">
+                    <div className="flex items-center gap-1.5 font-mono uppercase tracking-wider">
+                      <Boxes size={13} className="text-[#348bdd]" />
+                      <span>Additional Attachments ({viewingOrder.additionalAttachments.length})</span>
+                    </div>
+                  </div>
+                  <div className="p-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {viewingOrder.additionalAttachments.map((att) => (
+                      <div
+                        key={att.id}
+                        className="p-2 rounded-lg border border-slate-200 bg-slate-50/50 flex items-center justify-between text-xs"
+                      >
+                        <div className="min-w-0">
+                          <span
+                            className={`text-[9px] uppercase font-bold px-1.5 py-0.2 rounded mr-1.5 ${
+                              att.type === "box"
+                                ? "bg-sky-50 text-[#348bdd]"
+                                : "bg-amber-50 text-amber-700"
+                            }`}
+                          >
+                            {att.type}
+                          </span>
+                          <span className="font-medium text-slate-800 truncate">{att.name}</span>
+                        </div>
+                        <div className="text-right font-mono shrink-0 ml-2">
+                          <div className="text-[10px] text-slate-400">{att.quantity} × ₹{att.rate}</div>
+                          <div className="font-bold text-slate-900">₹{att.totalAmount.toFixed(2)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Bottom Section: Payment History (Left) and Bill Breakdown (Right) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Left: Payment Installment History */}
@@ -3965,6 +4210,15 @@ export default function OrdersPage() {
                         <span>Items Subtotal:</span>
                         <span>₹{viewTax.subtotal.toFixed(2)}</span>
                       </div>
+
+                      {viewingOrder.additionalAttachments && viewingOrder.additionalAttachments.length > 0 && (
+                        <div className="flex justify-between text-[#348bdd]">
+                          <span>Additional Attachments:</span>
+                          <span>
+                            +₹{viewingOrder.additionalAttachments.reduce((s, a) => s + (Number(a.totalAmount) || 0), 0).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
 
                       {viewTax.discount > 0 && (
                         <div className="flex justify-between text-emerald-600">
@@ -4697,17 +4951,49 @@ export default function OrdersPage() {
                         </td>
                       </tr>
                     ))}
+
+                    {/* Additional Attachments Line Items */}
+                    {a4InvoiceOrder.additionalAttachments?.map((att, aIdx) => (
+                      <tr key={att.id || aIdx} className="text-slate-800 bg-sky-50/20">
+                        <td className="py-2.5 px-3 text-center border-r border-slate-200 font-mono text-[11px]">
+                          {a4InvoiceOrder.items.length + aIdx + 1}
+                        </td>
+                        <td className="py-2.5 px-3 border-r border-slate-200">
+                          <div className="font-medium text-slate-900 flex items-center gap-1.5">
+                            <span className="text-[9px] uppercase font-bold px-1 rounded bg-sky-100 text-[#348bdd]">
+                              {att.type}
+                            </span>
+                            <span>{att.name}</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-center border-r border-slate-200 font-mono uppercase text-[11px] text-slate-600">
+                          pcs
+                        </td>
+                        <td className="py-2.5 px-3 text-right border-r border-slate-200 font-mono text-[11px]">
+                          ₹{Number(att.rate).toFixed(2)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right border-r border-slate-200 font-mono text-[11px]">
+                          {att.quantity} pcs
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-900">
+                          ₹{Number(att.totalAmount).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-50 border-t border-slate-300 text-slate-800 font-mono text-[11px]">
                       <td colSpan={4} className="py-2 px-3 font-medium border-r border-slate-300">
-                        Total Line Items: {a4InvoiceOrder.items.length}
+                        Total Line Items: {a4InvoiceOrder.items.length + (a4InvoiceOrder.additionalAttachments?.length || 0)}
                       </td>
                       <td className="py-2 px-3 text-right font-medium border-r border-slate-300">
-                        Total:
+                        Subtotal:
                       </td>
                       <td className="py-2 px-3 text-right font-medium text-slate-900">
-                        ₹{a4InvoiceOrder.items.reduce((sum, i) => sum + Number(i.totalAmount || 0), 0).toFixed(2)}
+                        ₹{(
+                          a4InvoiceOrder.items.reduce((sum, i) => sum + Number(i.totalAmount || 0), 0) +
+                          (a4InvoiceOrder.additionalAttachments?.reduce((sum, a) => sum + Number(a.totalAmount || 0), 0) || 0)
+                        ).toFixed(2)}
                       </td>
                     </tr>
                   </tfoot>
@@ -4946,6 +5232,198 @@ export default function OrdersPage() {
             <div className="text-center pt-2 pb-1 text-xs text-slate-500 font-medium">
               Order Customization Reference Photo (ImageKit)
             </div>
+          </div>
+        </div>
+      )}
+      {/* Add Attachment Modal */}
+      {isAddAttachmentModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-sm w-full overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-md bg-sky-50 text-[#348bdd] flex items-center justify-center">
+                  <Boxes size={14} />
+                </div>
+                <h3 className="text-xs font-bold text-slate-800">
+                  Add Additional Attachment
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddAttachmentModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleAddOrderAttachment} className="p-4 space-y-3.5">
+              {/* Type Switcher: Box or Sticker */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
+                  Attachment Type
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewAttachmentType("box");
+                      setSelectedUtilityId("");
+                      setCustomAttachmentName("");
+                      setAttachmentRate("");
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      newAttachmentType === "box"
+                        ? "bg-sky-50 border-[#348bdd] text-[#348bdd] ring-1 ring-[#348bdd]/20"
+                        : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Boxes size={15} />
+                    <span>Box</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewAttachmentType("sticker");
+                      setSelectedUtilityId("");
+                      setCustomAttachmentName("");
+                      setAttachmentRate("");
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      newAttachmentType === "sticker"
+                        ? "bg-amber-50 border-amber-500 text-amber-700 ring-1 ring-amber-500/20"
+                        : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Sparkles size={15} />
+                    <span>Sticker</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Select Existing or Enter Custom */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                  Select {newAttachmentType === "box" ? "Box" : "Sticker"}
+                </label>
+                <select
+                  value={selectedUtilityId}
+                  onChange={(e) => {
+                    const uId = e.target.value;
+                    setSelectedUtilityId(uId);
+                    const found = availableUtilities.find((u) => u.id === uId);
+                    if (found) {
+                      setCustomAttachmentName(found.name);
+                      setAttachmentRate(found.price);
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                >
+                  <option value="">-- Choose from Utilities --</option>
+                  {availableUtilities
+                    .filter((u) => u.type === newAttachmentType)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} (₹{u.price.toFixed(2)})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Name */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                  Name / Specification <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder={newAttachmentType === "box" ? "Box Name" : "Sticker Name"}
+                  value={customAttachmentName}
+                  onChange={(e) => setCustomAttachmentName(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                />
+              </div>
+
+              {/* Quantity and Rate */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                    Quantity <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => setAttachmentQty((q) => Math.max(1, q - 1))}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-l-lg border border-r-0 border-slate-200 text-xs cursor-pointer font-bold"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={attachmentQty}
+                      onWheel={(e) => (e.target as HTMLElement).blur()}
+                      onChange={(e) => setAttachmentQty(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full py-1.5 text-center text-xs bg-slate-50 border border-slate-200 text-slate-800 font-mono font-bold focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setAttachmentQty((q) => q + 1)}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-r-lg border border-l-0 border-slate-200 text-xs cursor-pointer font-bold"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                    Rate per item (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    placeholder="0.00"
+                    value={attachmentRate}
+                    onWheel={(e) => (e.target as HTMLElement).blur()}
+                    onChange={(e) => setAttachmentRate(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-mono focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
+                  />
+                </div>
+              </div>
+
+              {/* Total line preview */}
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
+                <span className="text-slate-500 font-medium">Line Amount:</span>
+                <span className="font-mono font-bold text-slate-800 text-sm">
+                  ₹{((Number(attachmentQty) || 0) * (Number(attachmentRate) || 0)).toFixed(2)}
+                </span>
+              </div>
+
+              {/* Actions */}
+              <div className="pt-1 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddAttachmentModalOpen(false)}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-[#348bdd] hover:bg-[#2c77be] rounded-lg shadow-2xs cursor-pointer"
+                >
+                  Add Attachment
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

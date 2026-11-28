@@ -138,10 +138,10 @@ export const SIDEBAR_ITEMS: NavItem[] = [
     category: "Inventory & Operations",
   },
   {
-    name: "Packing Utilities",
-    href: "/packing-utilities",
-    aliases: ["/packing-materials", "/utilities"],
-    icon: Archive,
+    name: "Utilities",
+    href: "/utilities",
+    aliases: ["/packing-utilities", "/utilities", "/packing-materials"],
+    icon: Boxes,
     category: "Inventory & Operations",
   },
   {
@@ -291,7 +291,8 @@ export default function Sidebar({
         if (Array.isArray(orderNames) && orderNames.length > 0) {
           const map = new Map(SIDEBAR_ITEMS.map((item) => [item.name, item]));
           const sorted: NavItem[] = [];
-          for (const name of orderNames) {
+          for (let name of orderNames) {
+            if (name === "Packing Utilities") name = "Utilities";
             const item = map.get(name);
             if (item) {
               sorted.push(item);
