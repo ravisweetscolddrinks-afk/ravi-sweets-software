@@ -4,10 +4,11 @@ export type { DateFilterType };
 export { getTodayDateStr, isDateMatchingFilter };
 
 export interface WarehouseEntryItem {
-  itemId: string; // ID from manufacturing_items
+  itemId: string; // ID from manufacturing_items or products
   name: string;
   unit: string; // "KG" | "Litre" | "Piece" etc.
   quantity: number;
+  imageUrl?: string;
   currentStock?: number;
   bufferStock?: number;
   costPerUnit?: number;

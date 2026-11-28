@@ -28,6 +28,7 @@ import {
 import {
   Warehouse,
   Plus,
+  Minus,
   Search,
   Calendar,
   Camera,
@@ -49,6 +50,7 @@ import {
   FileText,
   AlertTriangle,
   Info,
+  FolderTree,
 } from "lucide-react";
 
 interface RawMaterialItem {
@@ -59,6 +61,15 @@ interface RawMaterialItem {
   amount: number;
   bufferStock: number;
   category?: string;
+}
+
+interface CatalogProduct {
+  id: string;
+  name: string;
+  imageUrl: string;
+  categoryName: string;
+  unit: string;
+  amount: number;
 }
 
 interface LocalPhotoItem {
@@ -75,8 +86,10 @@ export default function WarehouseEntryPage() {
   // 1. Data states
   const [entries, setEntries] = useState<WarehouseEntry[]>([]);
   const [rawItems, setRawItems] = useState<RawMaterialItem[]>([]);
+  const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [isLoadingEntries, setIsLoadingEntries] = useState<boolean>(true);
   const [isLoadingItems, setIsLoadingItems] = useState<boolean>(true);
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
 
   // 2. Filters & Search (Default date filter is "today" as requested)
   const [dateFilter, setDateFilter] = useState<DateFilterType>("today");
@@ -90,6 +103,7 @@ export default function WarehouseEntryPage() {
   const [entryDate, setEntryDate] = useState<string>(getTodayDateStr());
   const [entryNotes, setEntryNotes] = useState<string>("");
   const [itemSearchTerm, setItemSearchTerm] = useState<string>("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedItems, setSelectedItems] = useState<WarehouseEntryItem[]>([]);
   const [attachedPhotos, setAttachedPhotos] = useState<LocalPhotoItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -159,6 +173,58 @@ export default function WarehouseEntryPage() {
     return () => unsub();
   }, []);
 
+  // Subscribe to products catalog (for visual product card picker with images)
+  useEffect(() => {
+    setIsLoadingProducts(true);
+    const q = query(collection(db, "products"), orderBy("name", "asc"));
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const list: CatalogProduct[] = snapshot.docs.map((d) => ({
+          id: d.id,
+          name: d.data().name || "Product",
+          imageUrl: d.data().imageUrl || "/logo.png",
+          categoryName: d.data().categoryName || "General",
+          unit: d.data().unit || "KG",
+          amount: Number(d.data().amount) || 0,
+        }));
+        setProducts(list);
+        setIsLoadingProducts(false);
+      },
+      (err) => {
+        console.error("Error loading products:", err);
+        setIsLoadingProducts(false);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  // Distinct product categories for filter pills
+  const productCategories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => {
+      if (p.categoryName) set.add(p.categoryName);
+    });
+    return Array.from(set).sort();
+  }, [products]);
+
+  // Filtered products for Card Type UI ("image below name thats it")
+  const displayedCardProducts = useMemo(() => {
+    return products.filter((p) => {
+      if (selectedCategory !== "all" && p.categoryName !== selectedCategory) {
+        return false;
+      }
+      if (itemSearchTerm.trim()) {
+        const q = itemSearchTerm.toLowerCase().trim();
+        return (
+          p.name.toLowerCase().includes(q) ||
+          p.categoryName.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [products, selectedCategory, itemSearchTerm]);
+
   // --- Filtering & Pagination ---
 
   const filteredEntries = useMemo(() => {
@@ -225,13 +291,49 @@ export default function WarehouseEntryPage() {
     setEntryDate(getTodayDateStr());
     setEntryNotes("");
     setItemSearchTerm("");
+    setSelectedCategory("all");
     setSelectedItems([]);
     setAttachedPhotos([]);
     setUploadProgressMsg("");
     setIsAddModalOpen(true);
   };
 
-  // Toggle item selection (multiple or single)
+  // Toggle product selection from card UI ("image below name thats it")
+  const handleToggleProductSelection = (prod: CatalogProduct) => {
+    const rawMatch = rawItems.find(
+      (r) =>
+        r.id === prod.id ||
+        r.name.toLowerCase().trim() === prod.name.toLowerCase().trim()
+    );
+    const currentStock = rawMatch ? Number(rawMatch.stock) || 0 : 0;
+
+    setSelectedItems((prev) => {
+      const exists = prev.find(
+        (i) =>
+          i.itemId === prod.id ||
+          i.name.toLowerCase().trim() === prod.name.toLowerCase().trim()
+      );
+      if (exists) {
+        return prev.filter((i) => i.itemId !== exists.itemId);
+      } else {
+        return [
+          ...prev,
+          {
+            itemId: rawMatch ? rawMatch.id : prod.id,
+            name: prod.name,
+            imageUrl: prod.imageUrl || "/logo.png",
+            unit: prod.unit || (rawMatch ? rawMatch.unit : "KG"),
+            quantity: 1, // default quantity
+            currentStock,
+            bufferStock: rawMatch ? rawMatch.bufferStock : 0,
+            costPerUnit: prod.amount || (rawMatch ? rawMatch.amount : 0),
+          },
+        ];
+      }
+    });
+  };
+
+  // Toggle raw material item selection
   const handleToggleItemSelection = (item: RawMaterialItem) => {
     setSelectedItems((prev) => {
       const exists = prev.find((i) => i.itemId === item.id);
@@ -244,6 +346,7 @@ export default function WarehouseEntryPage() {
             itemId: item.id,
             name: item.name,
             unit: item.unit,
+            imageUrl: "/logo.png",
             quantity: 1, // default quantity
             currentStock: item.stock,
             bufferStock: item.bufferStock,
@@ -346,29 +449,36 @@ export default function WarehouseEntryPage() {
       // 2. Main requirement: DEDUCT QUANTITY FROM MANUFACTURING STOCK ANALYSIS ITEMS
       setUploadProgressMsg("Deducting stock from Manufacturing Stock Analysis...");
       for (const item of selectedItems) {
-        const itemDocRef = doc(db, "manufacturing_items", item.itemId);
+        // Find matching manufacturing item by ID or by name
+        let rawItemFound = rawItems.find((r) => r.id === item.itemId);
+        if (!rawItemFound) {
+          rawItemFound = rawItems.find(
+            (r) => r.name.toLowerCase().trim() === item.name.toLowerCase().trim()
+          );
+        }
 
-        // Fetch latest current stock to ensure precision
-        const rawItemFound = rawItems.find((r) => r.id === item.itemId);
-        const currentStock = rawItemFound ? Number(rawItemFound.stock) || 0 : Number(item.currentStock) || 0;
-        const newStock = Math.max(0, Number((currentStock - item.quantity).toFixed(3)));
+        if (rawItemFound) {
+          const itemDocRef = doc(db, "manufacturing_items", rawItemFound.id);
+          const currentStock = Number(rawItemFound.stock) || 0;
+          const newStock = Math.max(0, Number((currentStock - item.quantity).toFixed(3)));
 
-        const adjustmentRecord = {
-          id: `adj_whe_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          date: new Date().toISOString(),
-          type: "decrease",
-          quantity: item.quantity,
-          previousStock: currentStock,
-          newStock,
-          reason: `Warehouse Entry #${entryNumber}${entryNotes ? ` (${entryNotes})` : ""}`,
-        };
+          const adjustmentRecord = {
+            id: `adj_whe_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            date: new Date().toISOString(),
+            type: "decrease",
+            quantity: item.quantity,
+            previousStock: currentStock,
+            newStock,
+            reason: `Warehouse Entry #${entryNumber}${entryNotes ? ` (${entryNotes})` : ""}`,
+          };
 
-        // Update manufacturing item in Firestore
-        await updateDoc(itemDocRef, {
-          stock: newStock,
-          adjustmentHistory: [adjustmentRecord],
-          updatedAt: serverTimestamp(),
-        });
+          // Update manufacturing item in Firestore
+          await updateDoc(itemDocRef, {
+            stock: newStock,
+            adjustmentHistory: [adjustmentRecord],
+            updatedAt: serverTimestamp(),
+          });
+        }
       }
 
       // 3. Save Warehouse Entry document
@@ -785,50 +895,54 @@ export default function WarehouseEntryPage() {
       </div>
 
       {/* =========================================================================
-          5. ADD WAREHOUSE ENTRY MODAL
+          5. ADD WAREHOUSE ENTRY FULLSCREEN MODAL
          ========================================================================= */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 w-screen h-screen overflow-hidden animate-in fade-in duration-150">
+          {/* Modal Header */}
           <div
-            className="bg-white rounded-xl border shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
-            style={{ borderColor: "var(--color-border-base)" }}
+            className="px-6 py-3.5 border-b flex items-center justify-between shrink-0 bg-white"
+            style={{ borderColor: "var(--color-border-subtle)" }}
           >
-            {/* Modal Header */}
-            <div
-              className="px-5 py-4 border-b flex items-center justify-between shrink-0"
-              style={{
-                borderColor: "var(--color-border-subtle)",
-                backgroundColor: "var(--color-bg-subtle)",
-              }}
-            >
-              <div className="flex items-center gap-2.5">
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
-                  style={{ backgroundColor: "var(--color-brand-primary)" }}
-                >
-                  <Warehouse size={16} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-slate-800">Add Warehouse Entry</h3>
-                  <span className="text-[11px] text-slate-500">
-                    Quantities will be automatically deducted from Manufacturing Stock Analysis
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center text-white shrink-0"
+                style={{ backgroundColor: "var(--color-brand-primary)" }}
+              >
+                <Warehouse size={18} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-slate-900">Add Warehouse Entry</h2>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-50 text-[#348bdd] border border-blue-200">
+                    Fullscreen Mode
                   </span>
                 </div>
+                <p className="text-xs text-slate-500">
+                  Select products, enter quantities, attach proof photos, and automatically deduct stock from manufacturing.
+                </p>
               </div>
-
-              <button
-                type="button"
-                onClick={() => !isSubmitting && setIsAddModalOpen(false)}
-                className="w-7 h-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200 flex items-center justify-center cursor-pointer"
-              >
-                <X size={16} />
-              </button>
             </div>
 
-            {/* Modal Form Body */}
-            <form onSubmit={handleSaveWarehouseEntry} className="flex-1 overflow-y-auto p-5 space-y-5">
-              {/* Row 1: Date & Notes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <button
+              type="button"
+              onClick={() => !isSubmitting && setIsAddModalOpen(false)}
+              className="w-9 h-9 rounded-full text-slate-400 hover:text-slate-800 hover:bg-slate-100 flex items-center justify-center cursor-pointer transition-colors"
+              title="Close (Esc)"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Modal Form Body */}
+          <form
+            onSubmit={handleSaveWarehouseEntry}
+            className="flex-1 flex flex-col overflow-hidden bg-slate-50/50"
+          >
+            {/* Top Config & Filters Bar */}
+            <div className="bg-white border-b border-slate-200 px-6 py-3 shrink-0 space-y-3">
+              {/* Row 1: Date & Purpose Notes */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 uppercase tracking-wider mb-1">
                     Entry Date <span className="text-rose-500">*</span>
@@ -837,8 +951,8 @@ export default function WarehouseEntryPage() {
                     value={entryDate}
                     onChange={(val) => setEntryDate(val || getTodayDateStr())}
                     placeholder="Entry date"
+                    clearable={false}
                   />
-                  <span className="text-[10px] text-slate-400 block mt-1">Preselected to today's date</span>
                 </div>
 
                 <div>
@@ -847,7 +961,7 @@ export default function WarehouseEntryPage() {
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Dispatched to kitchen / retail outlet"
+                    placeholder="e.g. Dispatched to retail counter / outlet replenishment"
                     value={entryNotes}
                     onChange={(e) => setEntryNotes(e.target.value)}
                     className="w-full text-xs px-3 py-2 rounded-md border focus:outline-none focus:ring-1 focus:ring-[#348bdd] bg-white"
@@ -856,139 +970,258 @@ export default function WarehouseEntryPage() {
                 </div>
               </div>
 
-              {/* Row 2: Select Items from Manufacturing Stock */}
-              <div className="space-y-2">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <label className="block text-[11px] font-medium text-slate-700 uppercase tracking-wider">
-                    Select Items to Deduct ({selectedItems.length} selected){" "}
-                    <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="relative w-full sm:w-64">
-                    <Search size={13} className="absolute left-2.5 top-2 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search manufacturing items..."
-                      value={itemSearchTerm}
-                      onChange={(e) => setItemSearchTerm(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md border focus:outline-none focus:ring-1 focus:ring-[#348bdd] bg-slate-50"
-                      style={{ borderColor: "var(--color-border-base)" }}
-                    />
-                  </div>
-                </div>
-
-                {/* Items Selection Grid (Click to toggle item) */}
-                <div className="border border-slate-200 rounded-lg p-2 max-h-40 overflow-y-auto bg-slate-50/50 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                  {isLoadingItems ? (
-                    <div className="col-span-full py-6 text-center text-xs text-slate-400">
-                      <RotateCw size={14} className="animate-spin inline mr-1 text-[#348bdd]" />
-                      Loading stock items...
-                    </div>
-                  ) : filteredRawItems.length === 0 ? (
-                    <div className="col-span-full py-6 text-center text-xs text-slate-400">
-                      No matching manufacturing items found.
-                    </div>
-                  ) : (
-                    filteredRawItems.map((item) => {
-                      const isSelected = selectedItems.some((i) => i.itemId === item.id);
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => handleToggleItemSelection(item)}
-                          className={`p-2 rounded-md border text-left cursor-pointer transition-all flex items-center justify-between gap-2 ${
-                            isSelected
-                              ? "bg-blue-50/90 border-[#348bdd] text-blue-900 shadow-2xs"
-                              : "bg-white border-slate-200 hover:border-slate-300 text-slate-800"
-                          }`}
-                        >
-                          <div className="truncate flex-1">
-                            <span className="text-xs font-medium block truncate">{item.name}</span>
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              Stock: {item.stock} {item.unit}
-                            </span>
-                          </div>
-                          <div
-                            className={`w-4 h-4 rounded shrink-0 flex items-center justify-center border text-[10px] ${
-                              isSelected
-                                ? "bg-[#348bdd] text-white border-[#348bdd]"
-                                : "border-slate-300 bg-white"
-                            }`}
-                          >
-                            {isSelected && <Check size={11} />}
-                          </div>
-                        </button>
-                      );
-                    })
+              {/* Row 2: Search & Category Filter Pills */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+                <div className="relative w-full sm:w-72">
+                  <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search product name..."
+                    value={itemSearchTerm}
+                    onChange={(e) => setItemSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 text-xs rounded-md border focus:outline-none focus:ring-1 focus:ring-[#348bdd] bg-slate-50/70"
+                    style={{ borderColor: "var(--color-border-base)" }}
+                  />
+                  {itemSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setItemSearchTerm("")}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X size={12} />
+                    </button>
                   )}
                 </div>
+
+                {/* Category Filter Pills */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCategory("all")}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer transition-colors whitespace-nowrap ${
+                      selectedCategory === "all"
+                        ? "bg-[#348bdd] text-white shadow-2xs"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    All ({products.length})
+                  </button>
+                  {productCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer transition-colors whitespace-nowrap ${
+                        selectedCategory === cat
+                          ? "bg-[#348bdd] text-white shadow-2xs"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Middle Main Scroll Area */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Product Cards Grid: "card type Ui image below name thats it" */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                    <Boxes size={14} className="text-[#348bdd]" />
+                    <span>Select Products ({selectedItems.length} selected)</span>
+                  </h3>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    Showing {displayedCardProducts.length} products • Click card to select
+                  </span>
+                </div>
+
+                {isLoadingProducts ? (
+                  <div className="py-20 text-center text-slate-400">
+                    <RotateCw size={24} className="animate-spin inline mr-2 text-[#348bdd]" />
+                    Loading products...
+                  </div>
+                ) : displayedCardProducts.length === 0 ? (
+                  <div className="py-16 text-center text-slate-400 text-xs bg-white rounded-xl border border-slate-200">
+                    No products match the filter.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 max-h-[46vh] overflow-y-auto p-2.5 border border-slate-200 rounded-xl bg-white shadow-2xs">
+                    {displayedCardProducts.map((prod) => {
+                      const isSelected = selectedItems.some(
+                        (i) => i.itemId === prod.id || i.name.toLowerCase().trim() === prod.name.toLowerCase().trim()
+                      );
+                      return (
+                        <div
+                          key={prod.id}
+                          onClick={() => handleToggleProductSelection(prod)}
+                          className={`group relative rounded-xl border-2 transition-all cursor-pointer overflow-hidden flex flex-col bg-white select-none ${
+                            isSelected
+                              ? "border-[#348bdd] ring-2 ring-blue-200 bg-blue-50/25 shadow-xs"
+                              : "border-slate-200 hover:border-slate-300 hover:shadow-2xs"
+                          }`}
+                        >
+                          {/* Image */}
+                          <div className="aspect-square w-full bg-slate-100 overflow-hidden relative">
+                            <img
+                              src={prod.imageUrl || "/logo.png"}
+                              alt={prod.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = "/logo.png";
+                              }}
+                            />
+                            {isSelected && (
+                              <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-[#348bdd] text-white flex items-center justify-center shadow-md">
+                                <Check size={13} />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Name below image - "image below name thats it" */}
+                          <div className="p-2 text-center flex-1 flex flex-col justify-center bg-white border-t border-slate-100">
+                            <span className="text-xs font-semibold text-slate-800 line-clamp-2 leading-tight">
+                              {prod.name}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
-              {/* Row 3: Quantities for Selected Items */}
+              {/* Selected Products Quantities Table */}
               {selectedItems.length > 0 && (
                 <div className="space-y-2">
-                  <div className="text-[11px] font-medium text-slate-700 uppercase tracking-wider">
-                    Enter Deduction Quantities
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                      <PackageCheck size={14} className="text-emerald-600" />
+                      <span>Enter Deduction Quantities ({selectedItems.length})</span>
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedItems([])}
+                      className="text-[11px] text-rose-600 hover:underline cursor-pointer"
+                    >
+                      Clear Selection
+                    </button>
                   </div>
-                  <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
                     <table className="w-full text-xs text-left border-collapse">
                       <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-mono uppercase text-slate-500">
                         <tr>
-                          <th className="py-2 px-3">Item Name</th>
-                          <th className="py-2 px-3 text-center">Available Stock</th>
-                          <th className="py-2 px-3 text-center w-36">Deduct Quantity</th>
-                          <th className="py-2 px-3 text-center">Remaining Stock</th>
-                          <th className="py-2 px-3 text-center w-12"></th>
+                          <th className="py-2.5 px-4 w-12 text-center">#</th>
+                          <th className="py-2.5 px-4">Product</th>
+                          <th className="py-2.5 px-4 text-center">Manufacturing Stock</th>
+                          <th className="py-2.5 px-4 text-center w-48">Deduct Quantity</th>
+                          <th className="py-2.5 px-4 text-center">Remaining Stock</th>
+                          <th className="py-2.5 px-4 text-center w-12"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {selectedItems.map((selItem) => {
+                        {selectedItems.map((selItem, sIdx) => {
                           const current = Number(selItem.currentStock) || 0;
                           const deduct = Number(selItem.quantity) || 0;
                           const rem = Math.max(0, Number((current - deduct).toFixed(3)));
-                          const isExceeding = deduct > current;
+                          const isExceeding = deduct > current && current > 0;
 
                           return (
                             <tr key={selItem.itemId} className="hover:bg-slate-50/50">
-                              <td className="py-2 px-3 font-medium text-slate-800">
-                                {selItem.name}
+                              <td className="py-2.5 px-4 text-center font-mono text-slate-400">
+                                {sIdx + 1}
                               </td>
-                              <td className="py-2 px-3 text-center font-mono text-slate-600">
-                                {current} {selItem.unit}
+
+                              <td className="py-2.5 px-4">
+                                <div className="flex items-center gap-2.5">
+                                  <img
+                                    src={selItem.imageUrl || "/logo.png"}
+                                    alt={selItem.name}
+                                    className="w-9 h-9 rounded-md object-cover border border-slate-200 shrink-0"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = "/logo.png";
+                                    }}
+                                  />
+                                  <div>
+                                    <div className="font-semibold text-slate-900">{selItem.name}</div>
+                                    <div className="text-[10px] text-slate-400 font-mono">
+                                      Unit: {selItem.unit}
+                                    </div>
+                                  </div>
+                                </div>
                               </td>
-                              <td className="py-2 px-3 text-center">
-                                <div className="flex items-center justify-center gap-1">
+
+                              <td className="py-2.5 px-4 text-center font-mono text-slate-600">
+                                {current > 0 ? `${current} ${selItem.unit}` : "—"}
+                              </td>
+
+                              <td className="py-2.5 px-4 text-center">
+                                <div className="inline-flex items-center border border-slate-300 rounded-md overflow-hidden bg-white shadow-2xs">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleItemQuantityChange(
+                                        selItem.itemId,
+                                        Math.max(1, (Number(selItem.quantity) || 1) - 1)
+                                      )
+                                    }
+                                    className="w-7 h-7 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                                  >
+                                    <Minus size={12} />
+                                  </button>
                                   <input
                                     type="number"
                                     min="0.001"
                                     step="any"
                                     value={selItem.quantity}
                                     onChange={(e) =>
-                                      handleItemQuantityChange(selItem.itemId, Number(e.target.value))
+                                      handleItemQuantityChange(
+                                        selItem.itemId,
+                                        Number(e.target.value)
+                                      )
                                     }
-                                    className="w-20 px-2 py-1 text-xs border rounded text-center font-mono font-bold focus:outline-none focus:ring-1 focus:ring-[#348bdd] border-slate-300 bg-white"
+                                    className="w-16 h-7 text-center font-mono font-bold text-xs border-x border-slate-300 focus:outline-none focus:ring-1 focus:ring-[#348bdd]"
                                   />
-                                  <span className="text-[11px] text-slate-500 font-mono">
-                                    {selItem.unit}
-                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleItemQuantityChange(
+                                        selItem.itemId,
+                                        (Number(selItem.quantity) || 0) + 1
+                                      )
+                                    }
+                                    className="w-7 h-7 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-[#348bdd] font-bold cursor-pointer"
+                                  >
+                                    <Plus size={12} />
+                                  </button>
                                 </div>
                               </td>
-                              <td className="py-2 px-3 text-center font-mono">
-                                <span
-                                  className={`font-semibold ${
-                                    isExceeding ? "text-amber-600" : "text-emerald-700"
-                                  }`}
-                                >
-                                  {rem} {selItem.unit}
-                                </span>
+
+                              <td className="py-2.5 px-4 text-center font-mono">
+                                {current > 0 ? (
+                                  <span
+                                    className={`font-semibold ${
+                                      isExceeding ? "text-amber-600" : "text-emerald-700"
+                                    }`}
+                                  >
+                                    {rem} {selItem.unit}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">Untracked</span>
+                                )}
                               </td>
-                              <td className="py-2 px-3 text-center">
+
+                              <td className="py-2.5 px-4 text-center">
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveSelectedItem(selItem.itemId)}
-                                  className="text-slate-400 hover:text-red-500 p-1 cursor-pointer"
-                                  title="Remove item"
+                                  className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                                  title="Remove product"
                                 >
-                                  <X size={13} />
+                                  <X size={14} />
                                 </button>
                               </td>
                             </tr>
@@ -1000,36 +1233,33 @@ export default function WarehouseEntryPage() {
                 </div>
               )}
 
-              {/* Row 4: Photos (Camera Capture & File Upload - Auto-compressed to <60KB) */}
+              {/* Warehouse Photos Section */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <label className="block text-[11px] font-medium text-slate-700 uppercase tracking-wider">
-                      Warehouse Photos Proof ({attachedPhotos.length})
-                    </label>
-                    <span className="text-[10px] text-slate-500">
-                      Photos will be compressed to strictly under 60KB before upload to ImageKit.
-                    </span>
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                      <Camera size={14} className="text-[#348bdd]" />
+                      <span>Warehouse Photos Proof ({attachedPhotos.length})</span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Images are automatically compressed to &lt;60KB before uploading to ImageKit.
+                    </p>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* Take Picture button (Opens Front/Back Camera Viewfinder) */}
                     <button
                       type="button"
                       onClick={() => setIsCameraOpen(true)}
-                      className="px-2.5 py-1.5 rounded-md bg-[#348bdd] hover:bg-[#2877c3] text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                      title="Take photo using camera (front or back)"
+                      className="px-3 py-1.5 rounded-md bg-[#348bdd] hover:bg-[#2877c3] text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
                     >
                       <Camera size={13} />
                       <span>Take Photo</span>
                     </button>
 
-                    {/* Choose from files */}
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                      title="Choose images from gallery/device"
+                      className="px-3 py-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
                     >
                       <Upload size={13} className="text-slate-500" />
                       <span>Choose Files</span>
@@ -1045,13 +1275,12 @@ export default function WarehouseEntryPage() {
                   </div>
                 </div>
 
-                {/* Photos Preview Thumbnails */}
                 {attachedPhotos.length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5 p-3 rounded-lg border border-slate-200 bg-slate-50">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 p-3.5 rounded-xl border border-slate-200 bg-white shadow-2xs">
                     {attachedPhotos.map((photo, pIdx) => (
                       <div
                         key={pIdx}
-                        className="relative rounded-lg overflow-hidden border border-slate-200 bg-white group aspect-square flex flex-col justify-between shadow-2xs"
+                        className="relative rounded-lg overflow-hidden border border-slate-200 bg-slate-50 group aspect-square flex flex-col justify-between shadow-2xs"
                       >
                         <img
                           src={photo.previewUrl}
@@ -1064,7 +1293,7 @@ export default function WarehouseEntryPage() {
                         <button
                           type="button"
                           onClick={() => handleRemovePhoto(pIdx)}
-                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity cursor-pointer shadow"
+                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center opacity-85 hover:opacity-100 transition-opacity cursor-pointer shadow"
                           title="Remove photo"
                         >
                           <X size={11} />
@@ -1073,36 +1302,52 @@ export default function WarehouseEntryPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="p-4 rounded-lg border border-dashed border-slate-300 text-center text-xs text-slate-400 bg-slate-50/50">
-                    <ImageIcon size={20} className="mx-auto text-slate-300 mb-1" />
-                    No photos attached yet. Click <strong>Take Photo</strong> to capture with camera or{" "}
-                    <strong>Choose Files</strong> from your device.
+                  <div className="p-6 rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-400 bg-white">
+                    <ImageIcon size={22} className="mx-auto text-slate-300 mb-1" />
+                    No photos attached yet. Click <strong>Take Photo</strong> or <strong>Choose Files</strong> to attach proof.
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* Progress message during upload */}
-              {uploadProgressMsg && (
-                <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-center gap-2">
-                  <RotateCw size={14} className="animate-spin text-[#348bdd]" />
-                  <span>{uploadProgressMsg}</span>
+            {/* Fullscreen Sticky Footer */}
+            <div className="px-6 py-3.5 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 shadow-sm">
+              <div className="flex items-center gap-4 text-xs font-mono">
+                <div>
+                  <span className="text-slate-400">Selected Products: </span>
+                  <span className="font-semibold text-slate-900">{selectedItems.length}</span>
                 </div>
-              )}
+                <div className="h-3.5 w-px bg-slate-200" />
+                <div>
+                  <span className="text-slate-400">Total Deduction Qty: </span>
+                  <span className="font-semibold text-[#348bdd]">
+                    {selectedItems.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0).toFixed(2)}
+                  </span>
+                </div>
+                {uploadProgressMsg && (
+                  <>
+                    <div className="h-3.5 w-px bg-slate-200" />
+                    <div className="flex items-center gap-1.5 text-blue-700 animate-pulse font-sans">
+                      <RotateCw size={12} className="animate-spin" />
+                      <span>{uploadProgressMsg}</span>
+                    </div>
+                  </>
+                )}
+              </div>
 
-              {/* Modal Actions */}
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
+              <div className="flex items-center gap-2.5">
                 <button
                   type="button"
                   disabled={isSubmitting}
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 text-xs rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer font-normal"
+                  className="px-4 py-2 text-xs rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting || selectedItems.length === 0}
-                  className="px-5 py-2 text-xs text-white rounded-md shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50 font-normal"
+                  className="px-5 py-2 text-xs text-white rounded-md shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50 font-medium hover:opacity-95"
                   style={{ backgroundColor: "var(--color-brand-primary)" }}
                 >
                   {isSubmitting ? (
@@ -1118,8 +1363,8 @@ export default function WarehouseEntryPage() {
                   )}
                 </button>
               </div>
-            </form>
-          </div>
+            </div>
+          </form>
         </div>
       )}
 
@@ -1177,9 +1422,19 @@ export default function WarehouseEntryPage() {
                 </span>
                 <div className="border border-slate-200 rounded-lg overflow-hidden divide-y divide-slate-100">
                   {viewingEntry.items?.map((it, idx) => (
-                    <div key={idx} className="p-2.5 flex items-center justify-between">
-                      <span className="font-medium text-slate-800">{it.name}</span>
-                      <span className="font-mono font-semibold text-[#348bdd]">
+                    <div key={idx} className="p-2.5 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <img
+                          src={it.imageUrl || "/logo.png"}
+                          alt={it.name}
+                          className="w-7 h-7 rounded object-cover border border-slate-200 shrink-0"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "/logo.png";
+                          }}
+                        />
+                        <span className="font-medium text-slate-800 truncate">{it.name}</span>
+                      </div>
+                      <span className="font-mono font-semibold text-[#348bdd] shrink-0">
                         {it.quantity} {it.unit}
                       </span>
                     </div>
